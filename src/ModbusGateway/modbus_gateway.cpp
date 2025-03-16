@@ -34,7 +34,7 @@
 static bool eth_connected = false;
 WebServer server(80);
 
-// What is the name of the device 
+// What is the name of the device
 // Passed as MACRO through a build_flag in secrets.ini
 // #define DEVICENAME "devicename"
 
@@ -46,9 +46,13 @@ WebServer server(80);
 // #define REMOTE "192.168.1.2"
 // #define SLAVE_ID 2
 
-
 // TCP Master
-IPAddress remote() {IPAddress a; a.fromString(REMOTE); return a;}
+IPAddress remote()
+{
+    IPAddress a;
+    a.fromString(REMOTE);
+    return a;
+}
 ModbusTCP tcp;
 modbus::Master<modbus::EM24> meter(tcp, remote());
 
@@ -94,12 +98,39 @@ void handleWattnode()
     for (auto i = wattnode._dd._blocks.begin(); i < wattnode._dd._blocks.end(); i++)
     {
         sprintf(buf, "Block %s\r\n", i->_name.c_str());
-        r+=buf;
+        r += buf;
         for (auto j = i->_registers.begin(); j < i->_registers.end(); j++)
         {
-            float f = wattnode.getFloatValue(*j);
-            sprintf(buf, "  %s=%.1f %s\r\n", j->_desc.c_str(), f, j->_unit);
-            r+=buf;
+            switch (j->_dataType)
+            {
+            case modbus::DataType::float32:
+            {
+                float v = wattnode.getFloatValue(*j);
+                sprintf(buf, "  %s=%.1f %s\r\n", j->_desc.c_str(), v, j->_unit);
+                r += buf;
+            }
+            break;
+            case modbus::DataType::uint32:
+            {
+                uint32_t v = wattnode.getUint32(*j);
+                sprintf(buf, "  %s=%i %s\r\n", j->_desc.c_str(), v, j->_unit);
+                r += buf;
+            }
+            break;
+            case modbus::DataType::int16:
+            {
+                int16_t v = wattnode.getInt16(*j);
+                sprintf(buf, "  %s=%i %s\r\n", j->_desc.c_str(), v, j->_unit);
+                r += buf;
+            }
+            break;
+            default:
+            {
+                sprintf(buf, "  %s=not converted %s\r\n", j->_desc.c_str(), j->_unit);
+                r += buf;
+            }
+            break;
+            }
         }
     }
     server.send(200, "text/plain", r.c_str());
@@ -236,7 +267,7 @@ void setup()
     Serial.println(val);
 
     // Setup timers to allow tracking elapsed time
-    prevTime1 = millis()-5000; // trigger timers immediately at startup
+    prevTime1 = millis() - 5000; // trigger timers immediately at startup
     prevTime2 = prevTime1;
     prevTime3 = prevTime1;
 
@@ -259,7 +290,8 @@ void setup()
     // OTA
     ArduinoOTA.setHostname(DEVICENAME);
     ArduinoOTA.setPassword(OTA_PASSWORD);
-    ArduinoOTA.onStart([]() {
+    ArduinoOTA.onStart([]()
+                       {
         String type;
         if (ArduinoOTA.getCommand() == U_FLASH)
             type = "sketch";
@@ -267,37 +299,33 @@ void setup()
             type = "filesystem";
 
         // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-        Serial.println("Start updating " + type);
-    })
-    .onEnd([]() {
-        Serial.println("\nEnd");
-    })
-    .onProgress([](unsigned int progress, unsigned int total) {
-        Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-    })
-    .onError([](ota_error_t error) {
+        Serial.println("Start updating " + type); })
+        .onEnd([]()
+               { Serial.println("\nEnd"); })
+        .onProgress([](unsigned int progress, unsigned int total)
+                    { Serial.printf("Progress: %u%%\r", (progress / (total / 100))); })
+        .onError([](ota_error_t error)
+                 {
         Serial.printf("Error[%u]: ", error);
         if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
         else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
         else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
         else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-        else if (error == OTA_END_ERROR) Serial.println("End Failed");
-    });
+        else if (error == OTA_END_ERROR) Serial.println("End Failed"); });
     ArduinoOTA.begin();
     Serial.println("ArduinoOTA started");
     Serial.print("FlashSize = ");
     Serial.print(ESP.getFlashChipSize());
     Serial.println("bytes.");
-
 }
 
 void loop()
 {
-    
+
     // The Modbus Master object tends to return timeouts if creating too many requests and not giving time to process them
     // Hence only create one request per loop with a following 20 ms delay
     // To implement this, a static _joblist is maintained. You can add blocks to be retrieved and
-    // they will be processed one at a time. 
+    // they will be processed one at a time.
     static std::queue<String> _joblist;
 
     // check for updates
@@ -317,12 +345,13 @@ void loop()
     {
         _joblist.push("energy");
         prevTime2 = currTime;
-    }    
-    if (currTime - prevTime3 >= 4700) { // This hardly ever changes
+    }
+    if (currTime - prevTime3 >= 4700)
+    { // This hardly ever changes
         _joblist.push("time");
         _joblist.push("tariff");
         prevTime3 = currTime;
-    }    
+    }
     // process only one job per loop to avoid timeouts
     if (_joblist.size() > 0)
     {
@@ -336,9 +365,10 @@ void loop()
 
     // Received data from the meter and it is now stored in the meter object
     // Copy and convert this data to the wattnode object
-    if (meter._dataRead) {
+    if (meter._dataRead)
+    {
         converter.CopyDataFromMasterToSlave();
-        meter._dataRead=false;
+        meter._dataRead = false;
     }
 
     // delay 20 miliseconds to allow background tasks to finish

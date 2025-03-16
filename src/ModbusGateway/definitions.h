@@ -13,136 +13,215 @@
 
 namespace modbus
 {
-    // Register
-    struct Register
+    enum DataType
     {
-        union value_t
-        {
-            static value_t _uint32_t(uint32_t v)
-            {
-                value_t r;
-                r.ui32 = v;
-                return r;
-            }
-            static value_t _int32_t(int32_t v)
-            {
-                value_t r;
-                r.i32 = v;
-                return r;
-            }
-            static value_t _int16_t(int16_t v)
-            {
-                value_t r;
-                r.i16 = v;
-                return r;
-            }
-            static value_t _uint16_t(uint16_t v)
-            {
-                value_t r;
-                r.ui16 = v;
-                return r;
-            }
-            static value_t _float32_t(float v)
-            {
-                value_t r;
-                r.f32 = v;
-                return r;
-            }
-            struct
-            {
-                uint8_t b1;
-                uint8_t b2;
-                uint8_t b3;
-                uint8_t b4;
-            };
-            struct
-            {
-                uint16_t w1;
-                uint16_t w2;
-            };
-            struct
-            {
-                uint16_t w;
-            };
-            struct
-            {
-                float f32;
-            };
-            struct
-            {
-                uint16_t ui16;
-            };
-            struct
-            {
-                uint16_t i16;
-            };
-            struct
-            {
-                uint32_t ui32;
-            };
-            struct
-            {
-                int32_t i32;
-            };
-        };
+        float32,
+        int16,
+        uint16,
+        int32,
+        uint32
+    };
 
-        enum data_type_e
+    enum Scaling
+    {
+        none = 1,
+        ten = 10,
+        hundred = 100,
+        thousand = 1000
+    };
+    static uint16_t getScaling(Scaling s)
+    {
+        switch (s)
         {
-            float32,
-            int16,
-            uint16,
-            int32,
-            uint32
-        };
-        Register(const String &name, uint16_t offset, uint8_t number, data_type_e r_type, String desc, String unit, uint32_t scaling, value_t d)
-            : _name(name), _offset(offset), _number(number), _r_type(r_type), _desc(desc), _unit(unit), _scaling(scaling), _default(d)
-        {
+        case none:
+            return 1;
+        case ten:
+            return 10;
+        case hundred:
+            return 100;
+        case thousand:
+            return 1000;
         }
+        return 0;
+    }
+    static uint16_t getLogScaling(Scaling s)
+    {
+        switch (s)
+        {
+        case none:
+            return 0;
+        case ten:
+            return 1;
+        case hundred:
+            return 2;
+        case thousand:
+            return 3;
+        }
+        return 0;
+    }
+    static uint16_t numberRegisters(DataType d)
+    {
+        switch (d)
+        {
+        case float32:
+            return 2;
+        case int16:
+            return 1;
+        case uint16:
+            return 1;
+        case int32:
+            return 2;
+        case uint32:
+            return 2;
+        }
+        return 0;
+    }
+    union Value
+    {
+        static Value _uint32_t(uint32_t v)
+        {
+            Value r;
+            r.ui32 = v;
+            return r;
+        }
+        static Value _int32_t(int32_t v)
+        {
+            Value r;
+            r.i32 = v;
+            return r;
+        }
+        static Value _int16_t(int16_t v)
+        {
+            Value r;
+            r.i16 = v;
+            return r;
+        }
+        static Value _uint16_t(uint16_t v)
+        {
+            Value r;
+            r.ui16 = v;
+            return r;
+        }
+        static Value _float32_t(float v)
+        {
+            Value r;
+            r.f32 = v;
+            return r;
+        }
+        struct
+        {
+            uint8_t b1;
+            uint8_t b2;
+            uint8_t b3;
+            uint8_t b4;
+        };
+        struct
+        {
+            uint16_t w1;
+            uint16_t w2;
+        };
+        struct
+        {
+            uint16_t w;
+        };
+        struct
+        {
+            float f32;
+        };
+        struct
+        {
+            uint16_t ui16;
+        };
+        struct
+        {
+            uint16_t i16;
+        };
+        struct
+        {
+            uint32_t ui32;
+        };
+        struct
+        {
+            int32_t i32;
+        };
+    };
+
+    // RegisterReference. Avoid searching by string and instead use indexing
+    struct RegisterReference
+    {
+        String  _desc;
+        int32_t _block_idx;
+        int32_t _register_idx;
+    };
+
+    // Register and Block Defintion
+    template <typename MODBUS_TYPE>
+    struct RegisterDefinition
+    {
+        using RegisterType = typename MODBUS_TYPE::e_registers;
+        const RegisterType _register;
+        const DataType     _dataType;
+        const String       _desc;
+        const String       _unit;
+        const Scaling      _scaling;
+        const Value        _default;
+    };
+    template <typename MODBUS_TYPE>
+    struct BlockDefinition
+    {
+        const String   _name;
+        const uint16_t _offset;
+        const std::vector<RegisterDefinition<MODBUS_TYPE>> _registers;
+    };
+
+    class Register
+    {
+    public:
         String toString(const uint16_t *r) const
         {
             String result = "unknown";
             char buf[40] = {0};
-            value_t v;
-            switch (_r_type)
+            Value v;
+            switch (_dataType)
             {
             case float32:
                 v.w1 = r[0];
                 v.w2 = r[1];
-                sprintf(buf, "%f", v.f32 / _scaling);
+                sprintf(buf, "%f", v.f32 / getScaling(_scaling));
                 result = buf;
                 break;
             case int16:
                 v.w1 = r[0];
-                if (_scaling == 1)
+                if (_scaling == none)
                     sprintf(buf, "%i", v.i16);
                 else
-                    sprintf(buf, "%.*f", lround(log10(_scaling)), float(v.i16) / _scaling);
+                    sprintf(buf, "%.*f", lround(getLogScaling(_scaling)), float(v.i16) / getScaling(_scaling));
                 result = buf;
                 break;
             case uint16:
                 v.w1 = r[0];
-                if (_scaling == 1)
+                if (_scaling == none)
                     sprintf(buf, "%u", v.ui16);
                 else
-                    sprintf(buf, "%.*f", lround(log10(_scaling)), float(v.ui16) / _scaling);
+                    sprintf(buf, "%.*f", lround(getLogScaling(_scaling)), float(v.ui16) / getScaling(_scaling));
                 result = buf;
                 break;
             case int32:
                 v.w1 = r[0];
                 v.w2 = r[1];
-                if (_scaling == 1)
+                if (_scaling == none)
                     sprintf(buf, "%i", v.i32);
                 else
-                    sprintf(buf, "%.*f", lround(log10(_scaling)), float(v.i32) / _scaling);
+                    sprintf(buf, "%.*f", lround(getLogScaling(_scaling)), float(v.i32) / getScaling(_scaling));
                 result = buf;
                 break;
             case uint32:
                 v.w1 = r[0];
                 v.w2 = r[1];
-                if (_scaling == 1)
+                if (_scaling == none)
                     sprintf(buf, "%u", v.ui32);
                 else
-                    sprintf(buf, "%.*f", lround(log10(_scaling)), float(v.ui32) / _scaling);
+                    sprintf(buf, "%.*f", lround(getLogScaling(_scaling)), float(v.ui32) / getScaling(_scaling));
                 result = buf;
                 break;
             }
@@ -152,45 +231,51 @@ namespace modbus
         float toFloat32(const uint16_t *r) const
         {
             float result = 0;
-            value_t v;
-            switch (_r_type)
+            Value v;
+            switch (_dataType)
             {
             case float32:
                 v.w1 = r[0];
                 v.w2 = r[1];
-                result = round(float(v.f32) * _scaling) / _scaling;
+                result = round(float(v.f32) * getScaling(_scaling)) / getScaling(_scaling);
                 break;
             case int16:
                 v.w1 = r[0];
-                result = round(float(v.i16) * _scaling) / _scaling;
+                result = round(float(v.i16) * getScaling(_scaling)) / getScaling(_scaling);
                 break;
             case uint16:
                 v.w1 = r[0];
-                result = round(float(v.ui16) * _scaling) / _scaling;
+                result = round(float(v.ui16) * getScaling(_scaling)) / getScaling(_scaling);
                 break;
             case int32:
                 v.w1 = r[0];
                 v.w2 = r[1];
-                result = round(float(v.i32) * _scaling) / _scaling;
+                result = round(float(v.i32) * getScaling(_scaling)) / getScaling(_scaling);
                 break;
             case uint32:
                 v.w1 = r[0];
                 v.w2 = r[1];
-                result = round(float(v.ui32) * _scaling) / _scaling;
+                result = round(float(v.ui32) * getScaling(_scaling)) / getScaling(_scaling);
                 break;
             }
             return result;
         }
 
-
-        const String _name;
         const uint16_t _offset;
         const uint8_t _number;
-        const data_type_e _r_type;
+        const DataType _dataType;
         const String _desc;
         const String _unit;
-        const uint32_t _scaling;
-        const value_t _default;        
+        const Scaling _scaling;
+        const Value _default;
+
+    private:
+        template <typename MODBUS_TYPE>
+        friend class DeviceDescription;
+        Register(uint16_t offset, uint8_t number, DataType r_type, String desc, String unit, Scaling scaling, Value d)
+            : _offset(offset), _number(number), _dataType(r_type), _desc(desc), _unit(unit), _scaling(scaling), _default(d)
+        {
+        }
     };
 
     // RegisterBlock
@@ -198,129 +283,104 @@ namespace modbus
     {
     public:
         ~RegisterBlock() {}
-        static RegisterBlock makeBlock(const char *name, const std::vector<Register> &registers)
-        {
-            String errors;
-            char buf[200];
-            sprintf(buf, "Check register list %s \r\n", name); 
-            errors.concat(buf); 
-            
-            std::vector<Register> r;
-            int offset = 0;
-            int number = 0;
-            if (registers.size() == 0)
-            {
-                sprintf(buf, "ERROR: Block of size 0");
-                errors.concat(buf);
-            }
-            else 
-            {
-                offset = registers[0]._offset;
-                int expected_offset = offset;
-                for (auto i = registers.begin(); i < registers.end(); i++)
-                {
-                    if (i->_offset != expected_offset)
-                    {
-                        sprintf(buf, "ERROR: Offset %i doesn't start at expected Offset %i. Skipping the rest of the registers.\r\n", i->_offset, offset); 
-                        errors.concat(buf);
-                        break;
-                    }
-                    r.push_back(*i);
-                    number += i->_number;
-                    expected_offset += i->_number;
-                }
-            }
-            return RegisterBlock(name, errors, r, offset, number);
-        }
-        const String _errors;
+
         const String _name;
         const std::vector<Register> _registers;
         const uint16_t _offset = 0;
         const uint16_t _number_reg = 0;
+
     private:
-        RegisterBlock(const char *name, const String& errors, const std::vector<Register> &registers, uint16_t offset, uint16_t number_reg)
-        : _name(name)
-        , _errors(errors)
-        , _registers(registers)
-        , _offset(offset)
-        , _number_reg(number_reg)
+        template <typename MODBUS_TYPE>
+        friend class DeviceDescription;
+        RegisterBlock(const String &name, const std::vector<Register> &registers, uint16_t offset, uint16_t number_reg)
+            : _name(name), _registers(registers), _offset(offset), _number_reg(number_reg)
         {
-        }        
+        }
     };
 
-// RegisterReference. Avoid searching by string and instead use indexing
-#define REGISTER_REFERENCE(name)                                                                         \
-static const DeviceDescription::RegisterReference &name()                                                \
-{                                                                                                        \
-    static DeviceDescription::RegisterReference rr = getDeviceDescription().getRegisterReference(#name); \
-    return rr;                                                                                           \
-}
-
     // Full description of the blocks and registers of a device, with a check that the registers in a block are contiguous
+    template <typename MODBUS_TYPE>
     class DeviceDescription
     {
     public:
-        struct RegisterReference
+        using RegisterType = typename MODBUS_TYPE::e_registers;
+        static DeviceDescription makeDD(const char *name, const std::vector<BlockDefinition<MODBUS_TYPE>> &blocks)
         {
-            const char *_name;
-            int32_t _block_idx;
-            int32_t _register_idx;
-        };
+            std::vector<RegisterBlock> bl;
+            std::vector<RegisterReference> rr;
+            rr.resize(RegisterType::last);
 
-        DeviceDescription(const char* name, const std::vector<RegisterBlock> &blocks) : _blocks(blocks), _name(name) {}
-        // Get an index based reference to a register
-        RegisterReference getRegisterReference(const char *name) const
-        {
-            for (auto i = _blocks.begin(); i < _blocks.end(); i++)
+            uint16_t blockNbr = 0;
+            for (auto i = blocks.begin(); i < blocks.end(); i++)
             {
-                for (auto j = i->_registers.begin(); j < i->_registers.end(); j++)
-                {
-                    if (j->_name == name)
-                    {
-                        return {name, i - _blocks.begin(), j - i->_registers.begin()};
-                    }
-                }
+                RegisterBlock b = makeBlock(i->_name, blockNbr, i->_offset, i->_registers, rr);
+                blockNbr++;
+                bl.push_back(b);
             }
-            Serial.printf("Can't find register %s\r\n", name);
-            return {name, -1, -1};
+            return DeviceDescription(name, bl, rr);
         }
+
         // Get a description of the device
         String GetDescriptions() const
         {
             String result;
             char buf[200];
             sprintf(buf, "Device: %s\r\n", _name.c_str());
-            result+=buf;
+            result += buf;
             for (auto i = _blocks.begin(); i < _blocks.end(); i++)
             {
-                sprintf(buf, "  %s", i->_errors.c_str());
-                result+=buf;
-                sprintf(buf, "  Block: %s, offset=%i, numreg=%i\r\n", i->_name.c_str(), i->_offset, i->_number_reg);
-                result+=buf;
+                sprintf(buf, "  Block: %s, offset=0x%04x (%06u), numreg=%i\r\n", i->_name.c_str(), i->_offset, i->_offset, i->_number_reg);
+                result += buf;
                 for (auto j = i->_registers.begin(); j < i->_registers.end(); j++)
                 {
-                    sprintf(buf, "    Register: %s\r\n", j->_name.c_str());
-                    result+=buf;
+                    sprintf(buf, "    Register 0x%04x (%06u): %s\r\n", j->_offset, j->_offset, j->_desc.c_str());
+                    result += buf;
                 }
                 sprintf(buf, "\r\n");
-                result+=buf;
+                result += buf;
             }
             return result;
         }
 
+        RegisterReference getRegisterReference(RegisterType r) const
+        {
+            return _rr[r];
+        }
+
         const String _name;
         const std::vector<RegisterBlock> _blocks;
+        const std::vector<RegisterReference> _rr;
+
+    private:
+        DeviceDescription(const char *name, const std::vector<RegisterBlock> &blocks, std::vector<RegisterReference> rr) : _blocks(blocks), _name(name), _rr(rr) {}
+        static RegisterBlock makeBlock(const String &name, uint16_t blockNbr, uint16_t offset, const std::vector<RegisterDefinition<MODBUS_TYPE>> &registers, std::vector<RegisterReference> &rr)
+        {
+            std::vector<Register> rl;
+            int number = 0;
+
+            uint16_t r_offset = offset;
+            for (auto i = registers.begin(); i < registers.end(); i++)
+            {
+                rr[int32_t(i->_register)] = RegisterReference{i->_desc, blockNbr, i - registers.begin()};
+                Register r(r_offset, numberRegisters(i->_dataType), i->_dataType, i->_desc, i->_unit, i->_scaling, i->_default);
+                rl.push_back(r);
+                number += numberRegisters(i->_dataType);
+                r_offset += numberRegisters(i->_dataType);
+            }
+
+            return RegisterBlock(name, rl, offset, number);
+        }
     };
 
     // BlockValues. This contains values for a block.
     struct BlockValues
     {
-        BlockValues(const RegisterBlock& block, int32_t _number_reg) : _block(block), _transaction(0) {_values.resize(_number_reg);}
+        BlockValues(const RegisterBlock &block, int32_t _number_reg) : _block(block), _transaction(0) { _values.resize(_number_reg); }
 
-        bool getFloatValue(const DeviceDescription::RegisterReference &rr, float &o) const
+        bool getFloatValue(const RegisterReference &rr, float &o) const
         {
             const Register &r = _block._registers[rr._register_idx];
-            o = r.toFloat32(&(_values[r._offset - _block._offset])) / r._scaling;
+            o = r.toFloat32(&(_values[r._offset - _block._offset])) / getScaling(r._scaling);
             return true;
         }
         String toString() const
@@ -345,7 +405,7 @@ static const DeviceDescription::RegisterReference &name()                       
             return result;
         }
 
-        const RegisterBlock& _block;
+        const RegisterBlock &_block;
         std::vector<uint16_t> _values;
         uint16_t _transaction;
     };
