@@ -73,7 +73,7 @@ namespace modbus
             switch (r._number)
             {
             case 1:
-                v.w1 = _rtu.Reg(TAddress({TAddress::HREG, r._offset}));
+                v.w = _rtu.Reg(TAddress({TAddress::HREG, r._offset}));
                 break;
             case 2:
                 v.w1 = _rtu.Reg(TAddress({TAddress::HREG, r._offset}));
@@ -81,7 +81,7 @@ namespace modbus
             }
             return v;
         }
-        
+
         String allValueAsString() const
         {
             String r = "";
@@ -114,30 +114,14 @@ namespace modbus
             {
                 for (auto j = i->_registers.begin(); j < i->_registers.end(); j++)
                 {
-                    switch (j->_dataType)
+                    switch (j->_number)
                     {
-                    case modbus::DataType::int16:
+                    case 1:
                         _rtu.addHreg(j->_offset, j->_default.w);
-                        // Serial.printf("int16 reg %i count=%i val=%i\r\n", i->_offset, 1, i->_default.w);
                         break;
-                    case modbus::DataType::uint16:
-                        _rtu.addHreg(j->_offset, j->_default.w);
-                        // Serial.printf("uint16 reg %i count=%i val=%i\r\n", i->_offset, 1, i->_default.w);
-                        break;
-                    case modbus::DataType::int32:
+                    case 2:
                         _rtu.addHreg(j->_offset, j->_default.w1);
                         _rtu.addHreg(j->_offset + 1, j->_default.w2);
-                        // Serial.printf("int32 reg %i count=%i val1=%i val2=%i\r\n", i->_offset, 2, i->_default.w1, i->_default.w2);
-                        break;
-                    case modbus::DataType::uint32:
-                        _rtu.addHreg(j->_offset, j->_default.w1);
-                        _rtu.addHreg(j->_offset + 1, j->_default.w2);
-                        // Serial.printf("uint32 reg %i count=%i val1=%i val2=%i\r\n", i->_offset, 2, i->_default.w1, i->_default.w2);
-                        break;
-                    case modbus::DataType::float32:
-                        _rtu.addHreg(j->_offset, j->_default.w1);
-                        _rtu.addHreg(j->_offset + 1, j->_default.w2);
-                        // Serial.printf("uint32 reg %i count=%i val1=%i val2=%i float=%f\r\n", i->_offset, 2, i->_default.w1, i->_default.w2, i->_default.f32);
                         break;
                     default:
                         Serial.printf("error\r\n");
