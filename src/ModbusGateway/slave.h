@@ -75,6 +75,16 @@ namespace modbus
             }
             return f;
         }
+        uint16_t getUint16(const Register& r)
+        {
+            uint16_t f = 0;
+            modbus::Value v;
+            if (r._dataType == DataType::uint16) {
+                v.w1 = _rtu.Reg(TAddress({ TAddress::HREG, r._offset}));
+                f=v.ui16;
+            }
+            return f;
+        }
         const DeviceDescription<MODBUS_TYPE>& _dd;
 
         private:

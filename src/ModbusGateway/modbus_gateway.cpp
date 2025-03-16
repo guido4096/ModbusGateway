@@ -124,7 +124,13 @@ void handleWattnode()
                 r += buf;
             }
             break;
-            default:
+            case modbus::DataType::uint16:
+            {
+                uint16_t v = wattnode.getUint16(*j);
+                sprintf(buf, "  %s=%u %s\r\n", j->_desc.c_str(), v, j->_unit);
+                r += buf;
+            }
+            break;            default:
             {
                 sprintf(buf, "  %s=not converted %s\r\n", j->_desc.c_str(), j->_unit);
                 r += buf;
