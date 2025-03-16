@@ -1,4 +1,4 @@
-<h1 align = "center">🌟LilyGO T-POE-PRO Modbus Gateway between SolarEdge/RTU and EM24/TCP</h1>
+<h1 align = "center">ESP32 (LilyGO T-POE-PRO) Modbus Gateway between SolarEdge/RTU and EM24/TCP</h1>
 
 This is a gateway to connect a SolarEdge inverter to your own energy meter. 
 
@@ -30,19 +30,7 @@ The gateway translates the registers and values as needed.
 9. Click (→) to upload firmware
 10. Click (plug symbol) to monitor serial output
 
-<h2 align = "left">2 FAQ </h2>
-
-1. Unable to upload sketch,Please enter the upload mode manually.
-    1. Connect the board via the USB cable or connect USB2TTL
-    2. Press and hold the BOOT button , While still pressing the BOOT button, press RST
-    3. Release the RST
-    4. Finally release the BOOT Button(The BOOT button must be released last)
-    5. Upload sketch
-
-2. Unable to verify flash chip connection
-    1. Please refer to this [issue #45](https://github.com/Xinyuan-LilyGO/LilyGO-T-ETH-Series/issues/45)
-
-## 3 RESOURCE
+## 2 RESOURCE
 
 * [T-ETH-PRO POE Module datasheet](./datasheet/ETH-PRO-POE-DP5300-12V.pdf)
 
