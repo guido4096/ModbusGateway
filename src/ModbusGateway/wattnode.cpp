@@ -137,7 +137,7 @@ const modbus::DeviceDescription<modbus::WattNode> &modbus::WattNode::getDeviceDe
                                                                      {message_delay, DataType::int16, "Message Delay", "ms", Scaling::ten, Value::_int16_t(0)}   // 5
                                                                  }},
                                              {"block1700", 1700, {
-                                                                     {serial_number, DataType::uint32, "Serial Number", "", Scaling::none, Value::_uint32_t(4054718)},   // serial number
+                                                                     {serial_number, DataType::uint32, "Serial Number", "", Scaling::none, Value::_uint32_t(SERIAL_NUMBER)},   // serial number
                                                                      {uptime, DataType::uint32, "Uptime", "s", Scaling::none, Value::_uint32_t(0)},                      // 0
                                                                      {total_uptime, DataType::uint32, "Total Uptime", "s", Scaling::none, Value::_uint32_t(0)},          // 0
                                                                      {wattnode_model, DataType::int16, "Wattnode Model", "", Scaling::none, Value::_int16_t(202)},       // 202
