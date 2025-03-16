@@ -8,7 +8,6 @@
  */
 #pragma once
 
-
 #include <Arduino.h>
 #include <definitions.h>
 #include <vector>
@@ -16,64 +15,69 @@ namespace modbus
 {
     class EM24
     {
-        public:
-        static const DeviceDescription& getDeviceDescription();
+    public:
+        static const DeviceDescription<EM24> &getDeviceDescription();
 
-        REGISTER_REFERENCE(l1_voltage);
-        REGISTER_REFERENCE(l2_voltage);
-        REGISTER_REFERENCE(l3_voltage);
-        REGISTER_REFERENCE(l12_voltage);
-        REGISTER_REFERENCE(l23_voltage);
-        REGISTER_REFERENCE(l31_voltage);
-        REGISTER_REFERENCE(l1_current);
-        REGISTER_REFERENCE(l2_current);
-        REGISTER_REFERENCE(l3_current);
-        REGISTER_REFERENCE(l1_power_active);
-        REGISTER_REFERENCE(l2_power_active);
-        REGISTER_REFERENCE(l3_power_active);
-        REGISTER_REFERENCE(l1_power_apparent);
-        REGISTER_REFERENCE(l2_power_apparent);
-        REGISTER_REFERENCE(l3_power_apparent);
-        REGISTER_REFERENCE(l1_power_reactive);
-        REGISTER_REFERENCE(l2_power_reactive);
-        REGISTER_REFERENCE(l3_power_reactive);
-        REGISTER_REFERENCE(voltage_ln);
-        REGISTER_REFERENCE(voltage_ll);
-        REGISTER_REFERENCE(power_active);
-        REGISTER_REFERENCE(power_apparent);
-        REGISTER_REFERENCE(power_reactive);
-        REGISTER_REFERENCE(l1_power_factor);
-        REGISTER_REFERENCE(l2_power_factor);
-        REGISTER_REFERENCE(l3_power_factor);
-        REGISTER_REFERENCE(total_pf);
-        REGISTER_REFERENCE(phase_sequence);
-        REGISTER_REFERENCE(frequency);
+        // All defines registers. See the definition of each register in the .cpp file
+        enum e_registers
+        {
+            l1_voltage,
+            l2_voltage,
+            l3_voltage,
+            l12_voltage,
+            l23_voltage,
+            l31_voltage,
+            l1_current,
+            l2_current,
+            l3_current,
+            l1_power_active,
+            l2_power_active,
+            l3_power_active,
+            l1_power_apparent,
+            l2_power_apparent,
+            l3_power_apparent,
+            l1_power_reactive,
+            l2_power_reactive,
+            l3_power_reactive,
+            voltage_ln,
+            voltage_ll,
+            power_active,
+            power_apparent,
+            power_reactive,
+            l1_power_factor,
+            l2_power_factor,
+            l3_power_factor,
+            total_pf,
+            phase_sequence,
+            frequency,
 
-        REGISTER_REFERENCE(import_energy_active);
-        REGISTER_REFERENCE(import_energy_reactive);
-        REGISTER_REFERENCE(demand_power_active);
-        REGISTER_REFERENCE(maximum_demand_power_active);
-        REGISTER_REFERENCE(import_energy_active_partial);
-        REGISTER_REFERENCE(import_energy_reactive_partial);
-        REGISTER_REFERENCE(l1_import_energy_active);
-        REGISTER_REFERENCE(l2_import_energy_active);
-        REGISTER_REFERENCE(l3_import_energy_active);
-        REGISTER_REFERENCE(t1_import_energy);
-        REGISTER_REFERENCE(t2_import_energy);
-        REGISTER_REFERENCE(t3_import_energy);
-        REGISTER_REFERENCE(t4_import_energy);
-        REGISTER_REFERENCE(export_energy_active);
-        REGISTER_REFERENCE(export_energy_reactive);
+            import_energy_active,
+            import_energy_reactive,
+            demand_power_active,
+            maximum_demand_power_active,
+            import_energy_active_partial,
+            import_energy_reactive_partial,
+            l1_import_energy_active,
+            l2_import_energy_active,
+            l3_import_energy_active,
+            t1_import_energy,
+            t2_import_energy,
+            t3_import_energy,
+            t4_import_energy,
+            export_energy_active,
+            export_energy_reactive,
 
-        REGISTER_REFERENCE(hour);
+            hour,
 
-        REGISTER_REFERENCE(t1_import_reactive);
-        REGISTER_REFERENCE(t2_import_reactive);
-        REGISTER_REFERENCE(t3_import_reactive);
-        REGISTER_REFERENCE(t4_import_reactive);
-        REGISTER_REFERENCE(demand_power_apparent);
-        REGISTER_REFERENCE(maximum_demand_power_apparent);
-        REGISTER_REFERENCE(maximum_demand_current);
+            t1_import_reactive,
+            t2_import_reactive,
+            t3_import_reactive,
+            t4_import_reactive,
+            demand_power_apparent,
+            maximum_demand_power_apparent,
+            maximum_demand_current,
+            last
+        };
     };
 
 }

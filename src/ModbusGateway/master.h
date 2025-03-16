@@ -29,19 +29,21 @@ namespace modbus
             }
             THIS=this;
         }
-        float getFloatValue(const DeviceDescription::RegisterReference &rr)
+        using RegisterType = typename MODBUS_TYPE::e_registers;
+        float getFloatValue(RegisterType r)
         {
-            float o = 0;
+            float f = 0;
+            RegisterReference rr = _dd.getRegisterReference(r);
             if (rr._block_idx >= 0 && rr._register_idx >= 0)
             {
-                _blockValues[rr._block_idx].getFloatValue(rr, o);
+                _blockValues[rr._block_idx].getFloatValue(rr, f);
                 // Serial.printf("%s=%f\r\n", rr._name, o);
             }
             else
             {
-                Serial.printf("Can't find value %s %i %i\r\n", rr._name, rr._block_idx, rr._register_idx);
+                Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
             }
-            return o;
+            return f;
         }
         bool readBlockFromMeter(const String& name)
         {
@@ -73,9 +75,9 @@ namespace modbus
             return result;
         }
 
-        std::vector<BlockValues> _blockValues;
-        const DeviceDescription& _dd;
-        bool                     _dataRead=false;
+        std::vector<BlockValues>              _blockValues;
+        const DeviceDescription<MODBUS_TYPE>& _dd;
+        bool                                  _dataRead=false;
 
         private:
         BlockValues *getBlockValues(const String &name)
