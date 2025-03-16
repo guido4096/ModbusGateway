@@ -134,7 +134,7 @@ namespace modbus
         };
         struct
         {
-            uint16_t i16;
+            int16_t i16;
         };
         struct
         {

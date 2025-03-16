@@ -59,7 +59,7 @@ namespace modbus
                 sprintf(buf, "%i", v.i16);
                 break;
             case DataType::uint16:
-                sprintf(buf, "%i", v.ui16);
+                sprintf(buf, "%u", v.ui16);
                 break;
             default:
                 sprintf(buf, "not converted");

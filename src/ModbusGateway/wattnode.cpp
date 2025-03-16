@@ -83,8 +83,8 @@ const modbus::DeviceDescription<modbus::WattNode> &modbus::WattNode::getDeviceDe
                                                                      {l3_energy_apparent, DataType::float32, "L3 Energy (Apparent)", "kWh", Scaling::none, Value::_float32_t(0)},                 //  apparent energy l3
                                                                      {power_factor, DataType::float32, "Power Factor", "", Scaling::none, Value::_float32_t(0)},                                  //  power factor
                                                                      {l1_power_factor, DataType::float32, "L1 Power Factor", "", Scaling::none, Value::_float32_t(0)},                            //  power factor l1
-                                                                     {l2_power_factor, DataType::float32, "L1 Power Factor", "", Scaling::none, Value::_float32_t(0)},                            //  power factor l2
-                                                                     {l3_power_factor, DataType::float32, "L1 Power Factor", "", Scaling::none, Value::_float32_t(0)},                            //  power factor l3
+                                                                     {l2_power_factor, DataType::float32, "L2 Power Factor", "", Scaling::none, Value::_float32_t(0)},                            //  power factor l2
+                                                                     {l3_power_factor, DataType::float32, "L3 Power Factor", "", Scaling::none, Value::_float32_t(0)},                            //  power factor l3
                                                                      {power_reactive, DataType::float32, "Power (Reactive)", "VAr", Scaling::none, Value::_float32_t(0)},                         //  total reactive power
                                                                      {l1_power_reactive, DataType::float32, "L1 Power (Reactive)", "VAr", Scaling::none, Value::_float32_t(0)},                   //  reactive power l1
                                                                      {l2_power_reactive, DataType::float32, "L2 Power (Reactive)", "VAr", Scaling::none, Value::_float32_t(0)},                   //  reactive power l2
@@ -106,10 +106,10 @@ const modbus::DeviceDescription<modbus::WattNode> &modbus::WattNode::getDeviceDe
                                                                  }},
                                              {"block1600", 1600, {
                                                                      {passcode, DataType::uint32, "Passcode", "", Scaling::none, Value::_uint32_t(1234)},                             // 1234
-                                                                     {ct_current, DataType::int16, "CT Current", "A", Scaling::none, Value::_int16_t(0)},                             // 0?
-                                                                     {ct_current_l1, DataType::int16, "L1 CT Current", "A", Scaling::none, Value::_int16_t(0)},                       // 0?
-                                                                     {ct_current_l2, DataType::int16, "L1 CT Current", "A", Scaling::none, Value::_int16_t(0)},                       // 0?
-                                                                     {ct_current_l3, DataType::int16, "L1 CT Current", "A", Scaling::none, Value::_int16_t(0)},                       // 0?
+                                                                     {ct_current, DataType::int16, "CT Current", "A", Scaling::none, Value::_int16_t(5)},                             // 5
+                                                                     {ct_current_l1, DataType::int16, "L1 CT Current", "A", Scaling::none, Value::_int16_t(5)},                       // 5
+                                                                     {ct_current_l2, DataType::int16, "L2 CT Current", "A", Scaling::none, Value::_int16_t(5)},                       // 5
+                                                                     {ct_current_l3, DataType::int16, "L3 CT Current", "A", Scaling::none, Value::_int16_t(5)},                       // 5
                                                                      {ct_inverted, DataType::int16, "CT Inverted", "", Scaling::none, Value::_int16_t(0)},                            // 0
                                                                      {measurement_averaging, DataType::int16, "Measurement Averaging", "", Scaling::none, Value::_int16_t(0)},        // 0
                                                                      {power_scale, DataType::int16, "Power Scale", "", Scaling::none, Value::_int16_t(0)},                            // 0
@@ -118,11 +118,11 @@ const modbus::DeviceDescription<modbus::WattNode> &modbus::WattNode::getDeviceDe
                                                                      {l1_power_energy_adj, DataType::int16, "Power/Energy adjustment l1", "", Scaling::none, Value::_int16_t(10000)}, // 10000
                                                                      {l2_power_energy_adj, DataType::int16, "Power/Energy adjustment l2", "", Scaling::none, Value::_int16_t(10000)}, // 10000
                                                                      {l3_power_energy_adj, DataType::int16, "Power/Energy adjustment l3", "", Scaling::none, Value::_int16_t(10000)}, // 10000
-                                                                     {l1_ct_phase_angle_adj, DataType::int16, "L1 Voltage", "V", Scaling::none, Value::_int16_t(-1000)},              // -1000
-                                                                     {l2_ct_phase_angle_adj, DataType::int16, "L1 Voltage", "V", Scaling::none, Value::_int16_t(-1000)},              // -1000
-                                                                     {l3_ct_phase_angle_adj, DataType::int16, "L1 Voltage", "V", Scaling::none, Value::_int16_t(-1000)},              // -1000
+                                                                     {l1_ct_phase_angle_adj, DataType::int16, "L1 CT Phase Angle", "", Scaling::none, Value::_int16_t(-1000)},        // -1000
+                                                                     {l2_ct_phase_angle_adj, DataType::int16, "L2 CT Phase Angle", "", Scaling::none, Value::_int16_t(-1000)},        // -1000
+                                                                     {l3_ct_phase_angle_adj, DataType::int16, "L3 CT Phase Angle", "", Scaling::none, Value::_int16_t(-1000)},        // -1000
                                                                      {minimum_power_reading, DataType::int16, "Minimum Power Reading", "", Scaling::none, Value::_int16_t(0)},        // 1500
-                                                                     {phase_offset, DataType::int16, "Phase Offset", "", Scaling::none, Value::_int16_t(0)},                          // 0?
+                                                                     {phase_offset, DataType::int16, "Phase Offset", "", Scaling::none, Value::_int16_t(0)},                          // 0
                                                                      {reset_energy, DataType::int16, "Reset Energy", "", Scaling::none, Value::_int16_t(0)},                          // 0
                                                                      {reset_demand, DataType::int16, "Reset Demand", "", Scaling::none, Value::_int16_t(0)},                          // 0
                                                                      {current_scale, DataType::int16, "Current Scale", "", Scaling::none, Value::_int16_t(20000)},                    // 20000
