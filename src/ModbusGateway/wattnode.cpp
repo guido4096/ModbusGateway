@@ -41,8 +41,8 @@ const modbus::DeviceDescription<modbus::WattNode> &modbus::WattNode::getDeviceDe
     static DeviceDescription<WattNode> dd =
         DeviceDescription<WattNode>::makeDD("wattnode",
                                             {{"block0000", 0, {
-                                                                  {dummy1, DataType::uint16, "Dummy 1 always returns 0", "", Scaling::none, Value::_uint16_t(0)}, // 0
-                                                                  {dummy2, DataType::uint16, "Dummy 2 always returns 0", "", Scaling::none, Value::_uint16_t(0)}  // 0
+                                                                  {dummy1, DataType::int16, "Dummy 1 always returns 0", "", Scaling::none, Value::_int16_t(0)}, // 0
+                                                                  {dummy2, DataType::int16, "Dummy 2 always returns 0", "", Scaling::none, Value::_int16_t(0)}  // 0
                                                               }},
                                              {"block1000", 1000, {{energy_active, DataType::float32, "Total Energy (Active)", "kWh", Scaling::none, Value::_float32_t(0)}, // 0
                                                                   {import_energy_active, DataType::float32, "Imported Total Energy (Active)", "kWh", Scaling::none, Value::_float32_t(0)},
