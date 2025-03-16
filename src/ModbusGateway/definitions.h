@@ -171,7 +171,7 @@ namespace modbus
     {
         const String   _name;
         const uint16_t _offset;
-        const std::vector<RegisterDefinition<MODBUS_TYPE>> _registers;
+        const std::vector<RegisterDefinition<MODBUS_TYPE>> _rd;
     };
 
     class Register
@@ -278,11 +278,11 @@ namespace modbus
         }
     };
 
-    // RegisterBlock
-    class RegisterBlock
+    // Block
+    class Block
     {
     public:
-        ~RegisterBlock() {}
+        ~Block() {}
 
         const String _name;
         const std::vector<Register> _registers;
@@ -292,7 +292,7 @@ namespace modbus
     private:
         template <typename MODBUS_TYPE>
         friend class DeviceDescription;
-        RegisterBlock(const String &name, const std::vector<Register> &registers, uint16_t offset, uint16_t number_reg)
+        Block(const String &name, const std::vector<Register> &registers, uint16_t offset, uint16_t number_reg)
             : _name(name), _registers(registers), _offset(offset), _number_reg(number_reg)
         {
         }
@@ -306,14 +306,14 @@ namespace modbus
         using RegisterType = typename MODBUS_TYPE::e_registers;
         static DeviceDescription makeDD(const char *name, const std::vector<BlockDefinition<MODBUS_TYPE>> &blocks)
         {
-            std::vector<RegisterBlock> bl;
+            std::vector<Block> bl;
             std::vector<RegisterReference> rr;
             rr.resize(RegisterType::last);
 
             uint16_t blockNbr = 0;
             for (auto i = blocks.begin(); i < blocks.end(); i++)
             {
-                RegisterBlock b = makeBlock(i->_name, blockNbr, i->_offset, i->_registers, rr);
+                Block b = makeBlock(i->_name, blockNbr, i->_offset, i->_rd, rr);
                 blockNbr++;
                 bl.push_back(b);
             }
@@ -348,12 +348,12 @@ namespace modbus
         }
 
         const String _name;
-        const std::vector<RegisterBlock> _blocks;
+        const std::vector<Block> _blocks;
         const std::vector<RegisterReference> _rr;
 
     private:
-        DeviceDescription(const char *name, const std::vector<RegisterBlock> &blocks, std::vector<RegisterReference> rr) : _blocks(blocks), _name(name), _rr(rr) {}
-        static RegisterBlock makeBlock(const String &name, uint16_t blockNbr, uint16_t offset, const std::vector<RegisterDefinition<MODBUS_TYPE>> &registers, std::vector<RegisterReference> &rr)
+        DeviceDescription(const char *name, const std::vector<Block> &blocks, std::vector<RegisterReference> rr) : _blocks(blocks), _name(name), _rr(rr) {}
+        static Block makeBlock(const String &name, uint16_t blockNbr, uint16_t offset, const std::vector<RegisterDefinition<MODBUS_TYPE>> &registers, std::vector<RegisterReference> &rr)
         {
             std::vector<Register> rl;
             int number = 0;
@@ -368,14 +368,14 @@ namespace modbus
                 r_offset += numberRegisters(i->_dataType);
             }
 
-            return RegisterBlock(name, rl, offset, number);
+            return Block(name, rl, offset, number);
         }
     };
 
     // BlockValues. This contains values for a block.
     struct BlockValues
     {
-        BlockValues(const RegisterBlock &block, int32_t _number_reg) : _block(block), _transaction(0) { _values.resize(_number_reg); }
+        BlockValues(const Block &block, int32_t _number_reg) : _block(block), _transaction(0) { _values.resize(_number_reg); }
 
         bool getFloatValue(const RegisterReference &rr, float &o) const
         {
@@ -405,7 +405,7 @@ namespace modbus
             return result;
         }
 
-        const RegisterBlock &_block;
+        const Block &_block;
         std::vector<uint16_t> _values;
         uint16_t _transaction;
     };

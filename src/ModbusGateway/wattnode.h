@@ -20,7 +20,7 @@ namespace modbus
     public:
         static const DeviceDescription<WattNode> &getDeviceDescription();
 
-        // All defines registers. See the definition of each register in the .cpp file
+        // All defined registers. See the definition of each register in the .cpp file
         enum e_registers
         {
             dummy1,
