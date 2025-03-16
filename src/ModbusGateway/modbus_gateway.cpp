@@ -242,7 +242,6 @@ void setup()
 #endif
 
     // Print the setup of the modbus devices
-
     Serial.print(wattnode._dd.GetDescriptions());
     Serial.print(meter._dd.GetDescriptions());
 
