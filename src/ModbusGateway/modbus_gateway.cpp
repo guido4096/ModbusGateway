@@ -75,70 +75,23 @@ unsigned long prevTime3;
 
 void handleRoot()
 {
-    String r = "";
-    for (auto i = meter._blockValues.begin(); i < meter._blockValues.end(); i++)
-        r += i->toString();
-
-    server.send(200, "text/plain", r.c_str());
+    String r = "\
+    <a href=\"./wattnode\">WattNode values</a><br/>\
+    <a href=\"./meter\">Meter values</a><br/>\
+    <a href=\"./description\">Description of WattNode and Meter device</a><br/>\
+    ";
+    server.send(200, "text/html", r.c_str());
 }
 
 void handleMeter()
 {
-    String r = "";
-    for (auto i = meter._blockValues.begin(); i < meter._blockValues.end(); i++)
-        r += i->toString();
-
+    String r = meter.allValueAsString();
     server.send(200, "text/plain", r.c_str());
 }
 
 void handleWattnode()
 {
-    String r = "";
-    char buf[200];
-    for (auto i = wattnode._dd._blocks.begin(); i < wattnode._dd._blocks.end(); i++)
-    {
-        sprintf(buf, "Block %s\r\n", i->_name.c_str());
-        r += buf;
-        for (auto j = i->_registers.begin(); j < i->_registers.end(); j++)
-        {
-            switch (j->_dataType)
-            {
-            case modbus::DataType::float32:
-            {
-                float v = wattnode.getFloatValue(*j);
-                sprintf(buf, "  %s=%.1f %s\r\n", j->_desc.c_str(), v, j->_unit);
-                r += buf;
-            }
-            break;
-            case modbus::DataType::uint32:
-            {
-                uint32_t v = wattnode.getUint32(*j);
-                sprintf(buf, "  %s=%i %s\r\n", j->_desc.c_str(), v, j->_unit);
-                r += buf;
-            }
-            break;
-            case modbus::DataType::int16:
-            {
-                int16_t v = wattnode.getInt16(*j);
-                sprintf(buf, "  %s=%i %s\r\n", j->_desc.c_str(), v, j->_unit);
-                r += buf;
-            }
-            break;
-            case modbus::DataType::uint16:
-            {
-                uint16_t v = wattnode.getUint16(*j);
-                sprintf(buf, "  %s=%u %s\r\n", j->_desc.c_str(), v, j->_unit);
-                r += buf;
-            }
-            break;            default:
-            {
-                sprintf(buf, "  %s=not converted %s\r\n", j->_desc.c_str(), j->_unit);
-                r += buf;
-            }
-            break;
-            }
-        }
-    }
+    String r = wattnode.allValueAsString();
     server.send(200, "text/plain", r.c_str());
 }
 
@@ -289,7 +242,6 @@ void setup()
 #endif
 
     // Print the setup of the modbus devices
-
     Serial.print(wattnode._dd.GetDescriptions());
     Serial.print(meter._dd.GetDescriptions());
 

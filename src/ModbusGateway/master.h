@@ -17,17 +17,15 @@ namespace modbus
     class Master
     {
     public:
-        Master(ModbusTCP& tcp, const IPAddress& remote) 
-        : _dd(MODBUS_TYPE::getDeviceDescription())
-        , _tcp(tcp)
-        , _remote(remote)
+        Master(ModbusTCP &tcp, const IPAddress &remote)
+            : _dd(MODBUS_TYPE::getDeviceDescription()), _tcp(tcp), _remote(remote)
         {
             for (auto i = _dd._blocks.begin(); i < _dd._blocks.end(); i++)
             {
-                BlockValues v (*i, i->_number_reg);
+                BlockValues v(*i, i->_number_reg);
                 _blockValues.push_back(v);
             }
-            THIS=this;
+            THIS = this;
         }
         using RegisterType = typename MODBUS_TYPE::e_registers;
         float getFloatValue(RegisterType r)
@@ -45,7 +43,8 @@ namespace modbus
             }
             return f;
         }
-        bool readBlockFromMeter(const String& name)
+
+        bool readBlockFromMeter(const String &name)
         {
             bool result = false;
             // Avoid growing of transaction list. Allow maximum 50 entries
@@ -54,7 +53,7 @@ namespace modbus
 
             if (_tcp.isConnected(_remote))
             {
-                modbus::BlockValues* b = getBlockValues(name);
+                modbus::BlockValues *b = getBlockValues(name);
                 if (b->_block._number_reg > 0)
                 {
                     uint16_t t = _tcp.readIreg(_remote, b->_block._offset, b->_values.data(), b->_block._number_reg, &cbReadIreg);
@@ -75,11 +74,17 @@ namespace modbus
             return result;
         }
 
-        std::vector<BlockValues>              _blockValues;
-        const DeviceDescription<MODBUS_TYPE>& _dd;
-        bool                                  _dataRead=false;
+        String allValueAsString() const
+        {
+            String r = "";
+            for (auto i = _blockValues.begin(); i < _blockValues.end(); i++)
+                r += i->toString();
+            return r;
+        }
 
-        private:
+        bool _dataRead = false;
+        const DeviceDescription<MODBUS_TYPE> &_dd;
+    private:
         BlockValues *getBlockValues(const String &name)
         {
             for (auto i = _blockValues.begin(); i < _blockValues.end(); i++)
@@ -92,20 +97,22 @@ namespace modbus
         static bool cbReadIreg(Modbus::ResultCode event, uint16_t transaction, void *data)
         {
             static bool hasAlreadyTimedOut = false;
-            if (event != Modbus::EX_SUCCESS)                     // If transaction got an error
+            if (event != Modbus::EX_SUCCESS)                                  // If transaction got an error
                 Serial.printf("Modbus result: %02X %i ", event, transaction); // Display Modbus error code
             else
                 hasAlreadyTimedOut = false;
 
             if (event == Modbus::EX_TIMEOUT)
-            {   // If Transaction timeout took place
-                if (hasAlreadyTimedOut) {
-                Serial.printf("Reset Modbus RTU connection"); 
-                THIS->_tcp.disconnect(THIS->_remote); // Close connection to slave and
-                THIS->_tcp.dropTransactions(); // Cancel all waiting transactions
-                hasAlreadyTimedOut = false;
+            { // If Transaction timeout took place
+                if (hasAlreadyTimedOut)
+                {
+                    Serial.printf("Reset Modbus RTU connection");
+                    THIS->_tcp.disconnect(THIS->_remote); // Close connection to slave and
+                    THIS->_tcp.dropTransactions();        // Cancel all waiting transactions
+                    hasAlreadyTimedOut = false;
                 }
-                else {
+                else
+                {
                     hasAlreadyTimedOut = true;
                 }
             }
@@ -125,7 +132,7 @@ namespace modbus
                 if (event == Modbus::EX_SUCCESS)
                 {
                     b->_transaction = transaction;
-                    THIS->_dataRead = true;                    
+                    THIS->_dataRead = true;
                 }
                 else
                 {
@@ -145,9 +152,10 @@ namespace modbus
             modbus::BlockValues *_block;
             uint16_t _transaction;
         };
-        static inline Master* THIS = 0;
+        static inline Master *THIS = 0;
         std::vector<Transaction> _transactionList;
-        ModbusTCP& _tcp;
+        ModbusTCP &_tcp;
         IPAddress _remote;
+        std::vector<BlockValues> _blockValues;
     };
 }
