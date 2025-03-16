@@ -115,14 +115,14 @@ const modbus::DeviceDescription<modbus::WattNode> &modbus::WattNode::getDeviceDe
                                                                      {power_scale, DataType::int16, "Power Scale", "", Scaling::none, Value::_int16_t(0)},                            // 0
                                                                      {demand_period, DataType::int16, "Demand Period", "Minute", Scaling::none, Value::_int16_t(15)},                 // 15
                                                                      {demand_subintervals, DataType::int16, "Demand Subintervals", "", Scaling::none, Value::_int16_t(0)},            // 1
-                                                                     {l1_power_energy_adj, DataType::int16, "Power/Energy adjustment l1", "", Scaling::none, Value::_int16_t(10000)}, // 10000
-                                                                     {l2_power_energy_adj, DataType::int16, "Power/Energy adjustment l2", "", Scaling::none, Value::_int16_t(10000)}, // 10000
-                                                                     {l3_power_energy_adj, DataType::int16, "Power/Energy adjustment l3", "", Scaling::none, Value::_int16_t(10000)}, // 10000
-                                                                     {l1_ct_phase_angle_adj, DataType::int16, "L1 CT Phase Angle", "", Scaling::none, Value::_int16_t(-1000)},        // -1000
-                                                                     {l2_ct_phase_angle_adj, DataType::int16, "L2 CT Phase Angle", "", Scaling::none, Value::_int16_t(-1000)},        // -1000
-                                                                     {l3_ct_phase_angle_adj, DataType::int16, "L3 CT Phase Angle", "", Scaling::none, Value::_int16_t(-1000)},        // -1000
+                                                                     {l1_power_energy_adj, DataType::int16, "L1 Power/Energy adjustment", "", Scaling::none, Value::_int16_t(10000)}, // 10000
+                                                                     {l2_power_energy_adj, DataType::int16, "L2 Power/Energy adjustment", "", Scaling::none, Value::_int16_t(10000)}, // 10000
+                                                                     {l3_power_energy_adj, DataType::int16, "L3 Power/Energy adjustment", "", Scaling::none, Value::_int16_t(10000)}, // 10000
+                                                                     {l1_ct_phase_angle_adj, DataType::int16, "L1 CT Phase Angle adjustment", "", Scaling::none, Value::_int16_t(-1000)}, // -1000
+                                                                     {l2_ct_phase_angle_adj, DataType::int16, "L2 CT Phase Angle adjustment", "", Scaling::none, Value::_int16_t(-1000)}, // -1000
+                                                                     {l3_ct_phase_angle_adj, DataType::int16, "L3 CT Phase Angle adjustment", "", Scaling::none, Value::_int16_t(-1000)}, // -1000
                                                                      {minimum_power_reading, DataType::int16, "Minimum Power Reading", "", Scaling::none, Value::_int16_t(0)},        // 1500
-                                                                     {phase_offset, DataType::int16, "Phase Offset", "", Scaling::none, Value::_int16_t(0)},                          // 0
+                                                                     {phase_offset, DataType::int16, "Phase Offset", "", Scaling::none, Value::_int16_t(120)},                        // 120
                                                                      {reset_energy, DataType::int16, "Reset Energy", "", Scaling::none, Value::_int16_t(0)},                          // 0
                                                                      {reset_demand, DataType::int16, "Reset Demand", "", Scaling::none, Value::_int16_t(0)},                          // 0
                                                                      {current_scale, DataType::int16, "Current Scale", "", Scaling::none, Value::_int16_t(20000)},                    // 20000
