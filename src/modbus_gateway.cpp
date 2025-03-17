@@ -6,13 +6,9 @@
  * @date      04-Mar-2025
  * @note      Setup and main loop to mediate between SolarEdge and the EnergyMeter
  */
+#include "utilities.h" //Board PinMap
 #include <Arduino.h>
-#if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-#include <ETHClass2.h> //Is to use the modified ETHClass
-#define ETH ETH2
-#else
 #include <ETH.h>
-#endif
 #include <SPI.h>
 #include <SD.h>
 #include <WebServer.h>
@@ -23,7 +19,6 @@
 #include <ModbusTCP.h>
 #include <ModbusRTU.h>
 
-#include "utilities.h" //Board PinMap
 #include "definitions.h"
 #include "slave.h"
 #include "master.h"
@@ -169,41 +164,18 @@ void setup()
     digitalWrite(ETH_POWER_PIN, HIGH);
 #endif
 
-    // Use static ip address config
-    // IPAddress local_ip(192, 168, 3, 235);
-    // IPAddress gateway(192, 168, 3, 1);
-    // IPAddress subnet(255, 255, 255, 0);
-    // IPAddress dns (192, 168, 3, 1);
-
-    /*ETH.config( local_ip,
-                gateway,
-                subnet,
-                dns
-                // IPAddress dns1 = (uint32_t)0x00000000,
-                // IPAddress dns2 = (uint32_t)0x00000000
-              );*/
 
     // Setup the ETHERNET device
-#if CONFIG_IDF_TARGET_ESP32
-    if (!ETH.begin(ETH_TYPE, ETH_ADDR, ETH_MDC_PIN,
-                   ETH_MDIO_PIN, ETH_RESET_PIN, ETH_CLK_MODE))
+    if (!ETH.begin(ETH_ADDR, ETH_PHY_POWER, ETH_MDC_PIN,
+        ETH_MDIO_PIN, ETH_TYPE, ETH_CLK_MODE))
     {
         Serial.println("ETH start Failed!");
     }
-#else
-    if (!ETH.begin(ETH_PHY_W5500, 1, ETH_CS_PIN, ETH_INT_PIN, ETH_RST_PIN,
-                   SPI3_HOST,
-                   ETH_SCLK_PIN, ETH_MISO_PIN, ETH_MOSI_PIN))
-    {
-        Serial.println("ETH start Failed!");
-    }
-#endif
 
     while (!eth_connected)
     {
         Serial.println("Wait for network connect ...");
         delay(500);
-        ETH.printInfo(Serial);
     }
 
     if (MDNS.begin(DEVICENAME))
@@ -232,14 +204,7 @@ void setup()
 
     // Start the 485 serial bus
     Serial485.begin(9600, SERIAL_8N1, BOARD_485_RX, BOARD_485_TX);
-
-#if defined(ESP32) || defined(ESP8266)
     rtu.begin(&Serial485);
-#else
-    rtu.begin(&Serial485);
-    // rtu.begin(&Serial, RXTX_PIN);  //or use RX/TX direction control pin (if required)
-    rtu.setBaudrate(9600);
-#endif
 
     // Print the setup of the modbus devices
     Serial.print(wattnode._dd.GetDescriptions());
