@@ -12,9 +12,8 @@
 #include <definitions.h>
 #include <vector>
 
-namespace modbus
+namespace modbus_gateway
 {
-
     class WattNode
     {
     public:

@@ -11,7 +11,7 @@
 #include <Arduino.h>
 #include <vector>
 
-namespace modbus
+namespace modbus_gateway
 {
     enum DataType
     {
@@ -262,6 +262,7 @@ namespace modbus
         }
 
         const uint16_t _offset;
+        const uint16_t _blockNbr;
         const uint8_t _number;
         const DataType _dataType;
         const String _desc;
@@ -272,8 +273,8 @@ namespace modbus
     private:
         template <typename MODBUS_TYPE>
         friend class DeviceDescription;
-        Register(uint16_t offset, uint8_t number, DataType r_type, String desc, String unit, Scaling scaling, Value d)
-            : _offset(offset), _number(number), _dataType(r_type), _desc(desc), _unit(unit), _scaling(scaling), _default(d)
+        Register(uint16_t offset, uint16_t blockNbr, uint8_t number, DataType r_type, String desc, String unit, Scaling scaling, Value d)
+            : _offset(offset), _blockNbr(blockNbr), _number(number), _dataType(r_type), _desc(desc), _unit(unit), _scaling(scaling), _default(d)
         {
         }
     };
@@ -362,7 +363,7 @@ namespace modbus
             for (auto i = registers.begin(); i < registers.end(); i++)
             {
                 rr[int32_t(i->_register)] = RegisterReference{i->_desc, blockNbr, i - registers.begin()};
-                Register r(r_offset, numberRegisters(i->_dataType), i->_dataType, i->_desc, i->_unit, i->_scaling, i->_default);
+                Register r(r_offset, blockNbr, numberRegisters(i->_dataType), i->_dataType, i->_desc, i->_unit, i->_scaling, i->_default);
                 rl.push_back(r);
                 number += numberRegisters(i->_dataType);
                 r_offset += numberRegisters(i->_dataType);
@@ -377,11 +378,21 @@ namespace modbus
     {
         BlockValues(const Block &block, int32_t _number_reg) : _block(block), _transaction(0) { _values.resize(_number_reg); }
 
-        bool getFloatValue(const RegisterReference &rr, float &o) const
+        float getFloatValue(const Register &r) const
+        {
+            return r.toFloat32(&(_values[r._offset - _block._offset])) / getScaling(r._scaling);
+        }
+        float getFloatValue(const RegisterReference &rr) const
         {
             const Register &r = _block._registers[rr._register_idx];
-            o = r.toFloat32(&(_values[r._offset - _block._offset])) / getScaling(r._scaling);
-            return true;
+            return getFloatValue(r);
+        }
+        void setFloatValue(const RegisterReference &rr, float f)
+        {
+            const Register &r = _block._registers[rr._register_idx];
+            Value v = Value::_float32_t(f);
+            _values[r._offset - _block._offset] = v.w1;
+            _values[r._offset - _block._offset+1] = v.w2;
         }
         String toString() const
         {

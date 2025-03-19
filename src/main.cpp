@@ -16,18 +16,26 @@
 #include <queue>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
-#include <ModbusTCP.h>
-#include <ModbusRTU.h>
+
 
 #include "definitions.h"
-#include "slave.h"
-#include "master.h"
+#include "server.h"
+#include "client.h"
 #include "em24.h"
 #include "wattnode.h"
 #include "convert_em24_to_wattnode.h"
-
+#include "ModbusClientTCP.h"
+#include "ModbusServerRTU.h"
+#include "RTUutils.h"
+#include "EthernetClient.h"
+#include "WiFiClient.h"
 static bool eth_connected = false;
 WebServer server(80);
+
+WiFiClient theClient;
+
+// Mutex
+std::timed_mutex _Mutex;
 
 // What is the name of the device
 // Passed as MACRO through a build_flag in secrets.ini
@@ -48,17 +56,17 @@ IPAddress remote()
     a.fromString(REMOTE);
     return a;
 }
-ModbusTCP tcp;
-modbus::Master<modbus::EM24> meter(tcp, remote());
+ModbusClientTCP tcp(theClient);
+modbus_gateway::Client<modbus_gateway::EM24> meter(tcp, remote(), _Mutex);
 
 // TCP Slave
-ModbusRTU rtu;
-modbus::Slave<modbus::WattNode> wattnode(rtu, SLAVE_ID);
+ModbusServerRTU rtu(1000);
+modbus_gateway::Server<modbus_gateway::WattNode> wattnode(rtu, SLAVE_ID, _Mutex);
 
 // Converter mapping
-modbus::ConvertEM24ToWattNode converter(meter, wattnode);
+modbus_gateway::ConvertEM24ToWattNode converter(meter, wattnode);
 
-// How thr RS485 port is connected to pins
+// How the RS485 port is connected to pins
 #define BOARD_485_TX 33
 #define BOARD_485_RX 32
 #define Serial485 Serial2
@@ -80,13 +88,13 @@ void handleRoot()
 
 void handleMeter()
 {
-    String r = meter.allValueAsString();
+    String r = meter.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
 
 void handleWattnode()
 {
-    String r = wattnode.allValueAsString();
+    String r = wattnode.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
 
@@ -164,7 +172,6 @@ void setup()
     digitalWrite(ETH_POWER_PIN, HIGH);
 #endif
 
-
     // Setup the ETHERNET device
     if (!ETH.begin(ETH_ADDR, ETH_PHY_POWER, ETH_MDC_PIN,
         ETH_MDIO_PIN, ETH_TYPE, ETH_CLK_MODE))
@@ -192,10 +199,12 @@ void setup()
 
     server.begin();
     Serial.println("HTTP server started");
-    tcp.client();
-    bool val = tcp.connect(remote(), 502);
-    Serial.print("tcp.connect=");
-    Serial.println(val);
+
+
+    tcp.setTimeout(2000, 200);
+    tcp.begin();
+    tcp.setTarget(IPAddress(remote()), 502);
+ 
 
     // Setup timers to allow tracking elapsed time
     prevTime1 = millis() - 5000; // trigger timers immediately at startup
@@ -203,8 +212,9 @@ void setup()
     prevTime3 = prevTime1;
 
     // Start the 485 serial bus
+    RTUutils::prepareHardwareSerial(Serial485);
     Serial485.begin(9600, SERIAL_8N1, BOARD_485_RX, BOARD_485_TX);
-    rtu.begin(&Serial485);
+    rtu.begin(Serial485);
 
     // Print the setup of the modbus devices
     Serial.print(wattnode._dd.GetDescriptions());
@@ -244,13 +254,6 @@ void setup()
 
 void loop()
 {
-
-    // The Modbus Master object tends to return timeouts if creating too many requests and not giving time to process them
-    // Hence only create one request per loop with a following 20 ms delay
-    // To implement this, a static _joblist is maintained. You can add blocks to be retrieved and
-    // they will be processed one at a time.
-    static std::queue<String> _joblist;
-
     // check for updates
     ArduinoOTA.handle();
 
@@ -261,39 +264,35 @@ void loop()
     unsigned long currTime = millis();
     if (currTime - prevTime1 >= 500) // Instantaneous variables, update regularly
     {
-        _joblist.push("dynamic");
+        meter.readBlockFromMeter("dynamic");
         prevTime1 = currTime;
     }
     if (currTime - prevTime2 >= 1000) // Updated every second
     {
-        _joblist.push("energy");
+        meter.readBlockFromMeter("energy");
         prevTime2 = currTime;
     }
-    if (currTime - prevTime3 >= 4700)
-    { // This hardly ever changes
-        _joblist.push("time");
-        _joblist.push("tariff");
+    if (currTime - prevTime3 >= 4700) // This hardly ever changes
+    { 
+
+        meter.readBlockFromMeter("time");
+        meter.readBlockFromMeter("tariff");
         prevTime3 = currTime;
     }
-    // process only one job per loop to avoid timeouts
-    if (_joblist.size() > 0)
-    {
-        String b = _joblist.front();
-        _joblist.pop();
-        meter.readBlockFromMeter(b);
-    }
-    // process tcp and rtu tasks
-    tcp.task();
-    rtu.task();
 
     // Received data from the meter and it is now stored in the meter object
     // Copy and convert this data to the wattnode object
     if (meter._dataRead)
     {
-        converter.CopyDataFromMasterToSlave();
+        // Try to obtain the lock, give up after 200ms
+        std::unique_lock lock(_Mutex, std::chrono::milliseconds(200));
+        if (lock.owns_lock())
+        {
+            converter.CopyDataFromMasterToSlave();
+        }
+        else {
+            Serial.println("Loop: could not lock");
+        }
         meter._dataRead = false;
     }
-
-    // delay 20 miliseconds to allow background tasks to finish
-    delay(20); // allow the cpu to switch to other tasks
 }

@@ -11,7 +11,7 @@
 #include <Arduino.h>
 #include <definitions.h>
 #include <vector>
-namespace modbus
+namespace modbus_gateway
 {
     class EM24
     {

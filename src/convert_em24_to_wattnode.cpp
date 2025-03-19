@@ -10,7 +10,7 @@
 #include "Arduino.h"
 #include "convert_em24_to_wattnode.h"
 
-void modbus::ConvertEM24ToWattNode::CopyDataFromMasterToSlave()
+void modbus_gateway::ConvertEM24ToWattNode::CopyDataFromMasterToSlave()
 {   
     //Serial.printf("CopyDateFromEM24ToWattnode\n\r");
     // Block 1000
