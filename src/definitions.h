@@ -149,7 +149,7 @@ namespace modbus_gateway
     // RegisterReference. Avoid searching by string and instead use indexing
     struct RegisterReference
     {
-        String  _desc;
+        String _desc;
         int32_t _block_idx;
         int32_t _register_idx;
     };
@@ -160,16 +160,16 @@ namespace modbus_gateway
     {
         using RegisterType = typename MODBUS_TYPE::e_registers;
         const RegisterType _register;
-        const DataType     _dataType;
-        const String       _desc;
-        const String       _unit;
-        const Scaling      _scaling;
-        const Value        _default;
+        const DataType _dataType;
+        const String _desc;
+        const String _unit;
+        const Scaling _scaling;
+        const Value _default;
     };
     template <typename MODBUS_TYPE>
     struct BlockDefinition
     {
-        const String   _name;
+        const String _name;
         const uint16_t _offset;
         const std::vector<RegisterDefinition<MODBUS_TYPE>> _rd;
     };
@@ -187,7 +187,7 @@ namespace modbus_gateway
             case float32:
                 v.w1 = r[0];
                 v.w2 = r[1];
-                sprintf(buf, "%f", v.f32 / getScaling(_scaling));
+                sprintf(buf, "%.1f", v.f32 / getScaling(_scaling));
                 result = buf;
                 break;
             case int16:
@@ -195,7 +195,7 @@ namespace modbus_gateway
                 if (_scaling == none)
                     sprintf(buf, "%i", v.i16);
                 else
-                    sprintf(buf, "%.*f", lround(getLogScaling(_scaling)), float(v.i16) / getScaling(_scaling));
+                    sprintf(buf, "%.*f", getLogScaling(_scaling), float(v.i16) / getScaling(_scaling));
                 result = buf;
                 break;
             case uint16:
@@ -203,7 +203,7 @@ namespace modbus_gateway
                 if (_scaling == none)
                     sprintf(buf, "%u", v.ui16);
                 else
-                    sprintf(buf, "%.*f", lround(getLogScaling(_scaling)), float(v.ui16) / getScaling(_scaling));
+                    sprintf(buf, "%.*f", getLogScaling(_scaling), float(v.ui16) / getScaling(_scaling));
                 result = buf;
                 break;
             case int32:
@@ -212,7 +212,7 @@ namespace modbus_gateway
                 if (_scaling == none)
                     sprintf(buf, "%i", v.i32);
                 else
-                    sprintf(buf, "%.*f", lround(getLogScaling(_scaling)), float(v.i32) / getScaling(_scaling));
+                    sprintf(buf, "%.*f", getLogScaling(_scaling), float(v.i32) / getScaling(_scaling));
                 result = buf;
                 break;
             case uint32:
@@ -221,7 +221,7 @@ namespace modbus_gateway
                 if (_scaling == none)
                     sprintf(buf, "%u", v.ui32);
                 else
-                    sprintf(buf, "%.*f", lround(getLogScaling(_scaling)), float(v.ui32) / getScaling(_scaling));
+                    sprintf(buf, "%.*f", getLogScaling(_scaling), float(v.ui32) / getScaling(_scaling));
                 result = buf;
                 break;
             }
@@ -374,9 +374,10 @@ namespace modbus_gateway
     };
 
     // BlockValues. This contains values for a block.
-    struct BlockValues
+    class Values
     {
-        BlockValues(const Block &block, int32_t _number_reg) : _block(block), _transaction(0) { _values.resize(_number_reg); }
+    public:
+        Values(const Block &block, int32_t _number_reg) : _block(block), _transaction(0) { _values.resize(_number_reg); }
 
         float getFloatValue(const Register &r) const
         {
@@ -392,9 +393,9 @@ namespace modbus_gateway
             const Register &r = _block._registers[rr._register_idx];
             Value v = Value::_float32_t(f);
             _values[r._offset - _block._offset] = v.w1;
-            _values[r._offset - _block._offset+1] = v.w2;
+            _values[r._offset - _block._offset + 1] = v.w2;
         }
-        String toString() const
+        String allValuesAsString() const
         {
             String result;
             char buf[200] = {0};
@@ -405,13 +406,11 @@ namespace modbus_gateway
             sprintf(buf, "Block %s\r\n", _block._name.c_str());
             result = result += buf;
 
-            int d = 0;
             for (auto i = _block._registers.begin(); i < _block._registers.end(); i++)
             {
-                String value = i->toString(&(_values[d]));
+                String value = i->toString(&(_values[i->_offset - _block._offset]));
                 sprintf(buf, "  %s=%s %s\n", i->_desc.c_str(), value.c_str(), i->_unit);
                 result += buf;
-                d += i->_number;
             }
             return result;
         }
@@ -420,4 +419,102 @@ namespace modbus_gateway
         std::vector<uint16_t> _values;
         uint16_t _transaction;
     };
+
+    template <typename MODBUS_TYPE>
+    class Device
+    {
+    public:
+        Device(const DeviceDescription<MODBUS_TYPE> &dd) : _dd(dd)
+        {
+            for (auto i = _dd._blocks.begin(); i < _dd._blocks.end(); i++)
+            {
+                Values bv(*i, i->_number_reg);
+                modbus_gateway::Value v;
+                for (auto j = i->_registers.begin(); j < i->_registers.end(); j++)
+                {
+                    switch (j->_number)
+                    {
+                    case 1:
+                        bv._values[j->_offset - i->_offset] = j->_default.w;
+                        break;
+                    case 2:
+                        bv._values[j->_offset - i->_offset] = j->_default.w1;
+                        bv._values[j->_offset - i->_offset + 1] = j->_default.w2;
+                        break;
+                    }
+                }
+                _values.push_back(bv);
+            }
+        }
+        uint32_t GetBlockIndex(const String &name)
+        {
+            for (auto i = _dd._blocks.begin(); i < _dd._blocks.end(); i++)
+            {
+                if (i->_name == name)
+                    return i - _dd._blocks.begin();
+            }
+            return -1;
+        }
+        const DeviceDescription<MODBUS_TYPE> &_dd;
+
+    private:
+        template <typename T>
+        friend class DataAccess;
+        std::vector<Values> _values;
+    };
+
+    template <typename MODBUS_TYPE>
+    class DataAccess
+    {
+    public:
+        using RegisterType = typename MODBUS_TYPE::RegisterType;
+        DataAccess(MODBUS_TYPE &s) : _s(s)
+        {
+            _s._Mutex.lock();
+        }
+        ~DataAccess()
+        {
+            _s._Mutex.unlock();
+        }
+        void setFloatValue(RegisterType r, float i)
+        {
+            RegisterReference rr = _s._device._dd.getRegisterReference(r);
+            if (rr._block_idx >= 0 && rr._register_idx >= 0)
+            {
+                GetValues()[rr._block_idx].setFloatValue(rr, i);
+                // Serial.printf("setFloatValue %s %i %i %i %i=%f\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx, r._blockNbr, r._offset, i);
+            }
+            else
+            {
+                Serial.printf("modbus_gateway::ConvertEM24ToWattNode::setFloatValue invalid reference for register %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
+            }
+        }
+        String allValuesAsString() const
+        {
+            String r = "";
+            for (auto i = GetValues().begin(); i < GetValues().end(); i++)
+                r += i->allValuesAsString();
+            return r;
+        }
+        float getFloatValue(RegisterType r)
+        {
+            float f = 0;
+            RegisterReference rr = _s._device._dd.getRegisterReference(r);
+            if (rr._block_idx >= 0 && rr._register_idx >= 0)
+            {
+                f = GetValues()[rr._block_idx].getFloatValue(rr);
+            }
+            else
+            {
+                Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
+            }
+            return f;
+        }
+        std::vector<Values> &GetValues() { return _s._device._values; }
+        const std::vector<Values> &GetValues() const { return _s._device._values; }
+
+    private:
+        MODBUS_TYPE &_s;
+    };
+
 }

@@ -34,8 +34,7 @@ WebServer server(80);
 
 WiFiClient theClient;
 
-// Mutex
-std::timed_mutex _Mutex;
+
 
 // What is the name of the device
 // Passed as MACRO through a build_flag in secrets.ini
@@ -57,11 +56,11 @@ IPAddress remote()
     return a;
 }
 ModbusClientTCP tcp(theClient);
-modbus_gateway::Client<modbus_gateway::EM24> meter(tcp, remote(), _Mutex);
+modbus_gateway::Client<modbus_gateway::EM24> meter(tcp, remote());
 
 // TCP Slave
 ModbusServerRTU rtu(1000);
-modbus_gateway::Server<modbus_gateway::WattNode> wattnode(rtu, SLAVE_ID, _Mutex);
+modbus_gateway::Server<modbus_gateway::WattNode> wattnode(rtu, SLAVE_ID);
 
 // Converter mapping
 modbus_gateway::ConvertEM24ToWattNode converter(meter, wattnode);
@@ -79,30 +78,32 @@ unsigned long prevTime3;
 void handleRoot()
 {
     String r = "\
-    <a href=\"./wattnode\">WattNode values</a><br/>\
-    <a href=\"./meter\">Meter values</a><br/>\
-    <a href=\"./description\">Description of WattNode and Meter device</a><br/>\
+    <a href=\"wattnode\">WattNode values</a><br/>\
+    <a href=\"meter\">Meter values</a><br/>\
+    <a href=\"description\">Description of WattNode and Meter device</a><br/>\
     ";
     server.send(200, "text/html", r.c_str());
 }
 
 void handleMeter()
 {
-    String r = meter.allValuesAsString();
+    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24>> m(meter);
+    String r = m.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
 
 void handleWattnode()
 {
-    String r = wattnode.allValuesAsString();
+    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::WattNode>> wn(wattnode);
+    String r = wn.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
 
 void handleDescription()
 {
     String r;
-    r += wattnode._dd.GetDescriptions();
-    r += meter._dd.GetDescriptions();
+    r += wattnode._device._dd.GetDescriptions();
+    r += meter._device._dd.GetDescriptions();
     server.send(200, "text/plain", r.c_str());
 }
 
@@ -217,8 +218,8 @@ void setup()
     rtu.begin(Serial485);
 
     // Print the setup of the modbus devices
-    Serial.print(wattnode._dd.GetDescriptions());
-    Serial.print(meter._dd.GetDescriptions());
+    Serial.print(wattnode._device._dd.GetDescriptions());
+    Serial.print(meter._device._dd.GetDescriptions());
 
     // OTA
     ArduinoOTA.setHostname(DEVICENAME);
@@ -284,15 +285,7 @@ void loop()
     // Copy and convert this data to the wattnode object
     if (meter._dataRead)
     {
-        // Try to obtain the lock, give up after 200ms
-        std::unique_lock lock(_Mutex, std::chrono::milliseconds(200));
-        if (lock.owns_lock())
-        {
-            converter.CopyDataFromMasterToSlave();
-        }
-        else {
-            Serial.println("Loop: could not lock");
-        }
+        converter.CopyDataFromMasterToSlave();
         meter._dataRead = false;
     }
 }
