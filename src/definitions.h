@@ -482,19 +482,14 @@ namespace modbus_gateway
         }
 
         // Plain uint16_t values access
-        void setValue(uint32_t block_idx, uint32_t val_index, uint16_t val)
+        void setRegister(uint32_t block_idx, uint32_t val_index, uint16_t val)
         {
             _s._device._blocks[block_idx]._registers[val_index] = val;
         }
-        uint16_t getValue(uint32_t block_idx, uint32_t val_index)
+        uint16_t getRegister(uint32_t block_idx, uint32_t val_index)
         {
             return _s._device._blocks[block_idx]._registers[val_index];
         }
-        uint32_t getValuesSizeForBlock(uint32_t block_idx)
-        {
-            return _s._device._blocks[block_idx]._registers.size();
-        }
-
         
         void setTransaction(uint32_t block_idx, uint32_t t)
         {

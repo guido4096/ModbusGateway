@@ -61,7 +61,7 @@ namespace modbus_gateway
                 // Fill response with requested data
                 for (uint16_t i = address; i < address + words; ++i)
                 {
-                    uint16_t v=dataaccess.getValue(block_index, i - _THIS->_device._dd._bds[block_index]._offset);
+                    uint16_t v=dataaccess.getRegister(block_index, i - _THIS->_device._dd._bds[block_index]._offset);
                     response.add(v);
                 }
                 // Serial.printf("Response: serverID=%d, FC=%d, length=%d block=%s\n\r", response.getServerID(), response.getFunctionCode(), response.size(), bv->_block._name.c_str());

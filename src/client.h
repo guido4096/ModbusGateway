@@ -89,7 +89,7 @@ namespace modbus_gateway
             if (t->_blockindex >= 0)
             {
                 // Serial.printf("Response: serverID=%d, FC=%d, Token=%08X, length=%d, values=%i\r\n", response.getServerID(), response.getFunctionCode(), token, (response.size()-3), (values._values.size()*2) );
-                if ((dataaccess.getValuesSizeForBlock(t->_blockindex) * 2) == (response.size() - 3))
+                if ((t->_this->_device._dd._bds[t->_blockindex]._number_reg * 2) == (response.size() - 3))
                 {
                     auto i = response.begin();
                     i += 3;
@@ -100,7 +100,7 @@ namespace modbus_gateway
                         Value v;
                         v.b2 = *i++;
                         v.b1 = *i++;
-                        dataaccess.setValue(t->_blockindex, index++, v.w);
+                        dataaccess.setRegister(t->_blockindex, index++, v.w);
                     }
                     t->_this->_dataRead = true;
                     dataaccess.setTransaction(t->_blockindex, t->_transaction);
