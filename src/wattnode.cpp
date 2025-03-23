@@ -36,7 +36,7 @@
 // Protocol for WattNode register list:
 //   https://ctlsys.com/wp-content/uploads/2016/10/WNC-Modbus-Register-List-V18.xls
 //   https://ctlsys.com/wp-content/uploads/2016/10/WNC-Modbus-Manual-V18c.pdf
-const modbus::DeviceDescription<modbus::WattNode> &modbus::WattNode::getDeviceDescription()
+const modbus_gateway::DeviceDescription<modbus_gateway::WattNode> &modbus_gateway::WattNode::getDeviceDescription()
 {
     static DeviceDescription<WattNode> dd =
         DeviceDescription<WattNode>::makeDD("wattnode",

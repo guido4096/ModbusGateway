@@ -12,7 +12,7 @@
 
 // Protocol for EM24 register list:
 //   https://www.enika.eu/data/files/produkty/energy%20m/CP/em24%20ethernet%20cp.pdf
-const modbus::DeviceDescription<modbus::EM24> &modbus::EM24::getDeviceDescription()
+const modbus_gateway::DeviceDescription<modbus_gateway::EM24> &modbus_gateway::EM24::getDeviceDescription()
 {
     static DeviceDescription<EM24> dd =
         DeviceDescription<EM24>::makeDD("em24",

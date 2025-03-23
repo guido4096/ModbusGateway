@@ -6,13 +6,9 @@
  * @date      04-Mar-2025
  * @note      Setup and main loop to mediate between SolarEdge and the EnergyMeter
  */
+#include "utilities.h" //Board PinMap
 #include <Arduino.h>
-#if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-#include <ETHClass2.h> //Is to use the modified ETHClass
-#define ETH ETH2
-#else
 #include <ETH.h>
-#endif
 #include <SPI.h>
 #include <SD.h>
 #include <WebServer.h>
@@ -20,19 +16,25 @@
 #include <queue>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
-#include <ModbusTCP.h>
-#include <ModbusRTU.h>
 
-#include "utilities.h" //Board PinMap
+
 #include "definitions.h"
-#include "slave.h"
-#include "master.h"
+#include "server.h"
+#include "client.h"
 #include "em24.h"
 #include "wattnode.h"
 #include "convert_em24_to_wattnode.h"
-
+#include "ModbusClientTCP.h"
+#include "ModbusServerRTU.h"
+#include "RTUutils.h"
+#include "EthernetClient.h"
+#include "WiFiClient.h"
 static bool eth_connected = false;
 WebServer server(80);
+
+WiFiClient theClient;
+
+
 
 // What is the name of the device
 // Passed as MACRO through a build_flag in secrets.ini
@@ -53,17 +55,17 @@ IPAddress remote()
     a.fromString(REMOTE);
     return a;
 }
-ModbusTCP tcp;
-modbus::Master<modbus::EM24> meter(tcp, remote());
+ModbusClientTCP tcp(theClient);
+modbus_gateway::Client<modbus_gateway::EM24> meter(tcp, remote());
 
 // TCP Slave
-ModbusRTU rtu;
-modbus::Slave<modbus::WattNode> wattnode(rtu, SLAVE_ID);
+ModbusServerRTU rtu(1000);
+modbus_gateway::Server<modbus_gateway::WattNode> wattnode(rtu, SLAVE_ID);
 
 // Converter mapping
-modbus::ConvertEM24ToWattNode converter(meter, wattnode);
+modbus_gateway::ConvertEM24ToWattNode converter(meter, wattnode);
 
-// How thr RS485 port is connected to pins
+// How the RS485 port is connected to pins
 #define BOARD_485_TX 33
 #define BOARD_485_RX 32
 #define Serial485 Serial2
@@ -76,30 +78,32 @@ unsigned long prevTime3;
 void handleRoot()
 {
     String r = "\
-    <a href=\"./wattnode\">WattNode values</a><br/>\
-    <a href=\"./meter\">Meter values</a><br/>\
-    <a href=\"./description\">Description of WattNode and Meter device</a><br/>\
+    <a href=\"wattnode\">WattNode values</a><br/>\
+    <a href=\"meter\">Meter values</a><br/>\
+    <a href=\"description\">Description of WattNode and Meter device</a><br/>\
     ";
     server.send(200, "text/html", r.c_str());
 }
 
 void handleMeter()
 {
-    String r = meter.allValueAsString();
+    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24>> m(meter);
+    String r = m.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
 
 void handleWattnode()
 {
-    String r = wattnode.allValueAsString();
+    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::WattNode>> wn(wattnode);
+    String r = wn.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
 
 void handleDescription()
 {
     String r;
-    r += wattnode._dd.GetDescriptions();
-    r += meter._dd.GetDescriptions();
+    r += wattnode._device._dd.GetDescriptions();
+    r += meter._device._dd.GetDescriptions();
     server.send(200, "text/plain", r.c_str());
 }
 
@@ -169,41 +173,17 @@ void setup()
     digitalWrite(ETH_POWER_PIN, HIGH);
 #endif
 
-    // Use static ip address config
-    // IPAddress local_ip(192, 168, 3, 235);
-    // IPAddress gateway(192, 168, 3, 1);
-    // IPAddress subnet(255, 255, 255, 0);
-    // IPAddress dns (192, 168, 3, 1);
-
-    /*ETH.config( local_ip,
-                gateway,
-                subnet,
-                dns
-                // IPAddress dns1 = (uint32_t)0x00000000,
-                // IPAddress dns2 = (uint32_t)0x00000000
-              );*/
-
     // Setup the ETHERNET device
-#if CONFIG_IDF_TARGET_ESP32
-    if (!ETH.begin(ETH_TYPE, ETH_ADDR, ETH_MDC_PIN,
-                   ETH_MDIO_PIN, ETH_RESET_PIN, ETH_CLK_MODE))
+    if (!ETH.begin(ETH_ADDR, ETH_PHY_POWER, ETH_MDC_PIN,
+        ETH_MDIO_PIN, ETH_TYPE, ETH_CLK_MODE))
     {
         Serial.println("ETH start Failed!");
     }
-#else
-    if (!ETH.begin(ETH_PHY_W5500, 1, ETH_CS_PIN, ETH_INT_PIN, ETH_RST_PIN,
-                   SPI3_HOST,
-                   ETH_SCLK_PIN, ETH_MISO_PIN, ETH_MOSI_PIN))
-    {
-        Serial.println("ETH start Failed!");
-    }
-#endif
 
     while (!eth_connected)
     {
         Serial.println("Wait for network connect ...");
         delay(500);
-        ETH.printInfo(Serial);
     }
 
     if (MDNS.begin(DEVICENAME))
@@ -220,10 +200,12 @@ void setup()
 
     server.begin();
     Serial.println("HTTP server started");
-    tcp.client();
-    bool val = tcp.connect(remote(), 502);
-    Serial.print("tcp.connect=");
-    Serial.println(val);
+
+
+    tcp.setTimeout(2000, 200);
+    tcp.begin();
+    tcp.setTarget(IPAddress(remote()), 502);
+ 
 
     // Setup timers to allow tracking elapsed time
     prevTime1 = millis() - 5000; // trigger timers immediately at startup
@@ -231,19 +213,13 @@ void setup()
     prevTime3 = prevTime1;
 
     // Start the 485 serial bus
+    RTUutils::prepareHardwareSerial(Serial485);
     Serial485.begin(9600, SERIAL_8N1, BOARD_485_RX, BOARD_485_TX);
-
-#if defined(ESP32) || defined(ESP8266)
-    rtu.begin(&Serial485);
-#else
-    rtu.begin(&Serial485);
-    // rtu.begin(&Serial, RXTX_PIN);  //or use RX/TX direction control pin (if required)
-    rtu.setBaudrate(9600);
-#endif
+    rtu.begin(Serial485);
 
     // Print the setup of the modbus devices
-    Serial.print(wattnode._dd.GetDescriptions());
-    Serial.print(meter._dd.GetDescriptions());
+    Serial.print(wattnode._device._dd.GetDescriptions());
+    Serial.print(meter._device._dd.GetDescriptions());
 
     // OTA
     ArduinoOTA.setHostname(DEVICENAME);
@@ -279,13 +255,6 @@ void setup()
 
 void loop()
 {
-
-    // The Modbus Master object tends to return timeouts if creating too many requests and not giving time to process them
-    // Hence only create one request per loop with a following 20 ms delay
-    // To implement this, a static _joblist is maintained. You can add blocks to be retrieved and
-    // they will be processed one at a time.
-    static std::queue<String> _joblist;
-
     // check for updates
     ArduinoOTA.handle();
 
@@ -296,30 +265,21 @@ void loop()
     unsigned long currTime = millis();
     if (currTime - prevTime1 >= 500) // Instantaneous variables, update regularly
     {
-        _joblist.push("dynamic");
+        meter.readBlockFromMeter("dynamic");
         prevTime1 = currTime;
     }
     if (currTime - prevTime2 >= 1000) // Updated every second
     {
-        _joblist.push("energy");
+        meter.readBlockFromMeter("energy");
         prevTime2 = currTime;
     }
-    if (currTime - prevTime3 >= 4700)
-    { // This hardly ever changes
-        _joblist.push("time");
-        _joblist.push("tariff");
+    if (currTime - prevTime3 >= 4700) // This hardly ever changes
+    { 
+
+        meter.readBlockFromMeter("time");
+        meter.readBlockFromMeter("tariff");
         prevTime3 = currTime;
     }
-    // process only one job per loop to avoid timeouts
-    if (_joblist.size() > 0)
-    {
-        String b = _joblist.front();
-        _joblist.pop();
-        meter.readBlockFromMeter(b);
-    }
-    // process tcp and rtu tasks
-    tcp.task();
-    rtu.task();
 
     // Received data from the meter and it is now stored in the meter object
     // Copy and convert this data to the wattnode object
@@ -328,7 +288,4 @@ void loop()
         converter.CopyDataFromMasterToSlave();
         meter._dataRead = false;
     }
-
-    // delay 20 miliseconds to allow background tasks to finish
-    delay(20); // allow the cpu to switch to other tasks
 }
