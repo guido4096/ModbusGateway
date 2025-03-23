@@ -20,11 +20,11 @@ namespace modbus_gateway
     public:
         using RegisterType = typename MODBUS_TYPE::e_registers;
 
-        Server(ModbusServerRTU &rtu, uint8_t slaveId)
-            : _device(MODBUS_TYPE::getDeviceDescription()), _rtu(rtu)
+        Server(ModbusServerRTU &rtu, uint8_t rtuServerId, uint32_t serialNumber)
+            : _device(MODBUS_TYPE::getDeviceDescription(rtuServerId, serialNumber)), _rtu(rtu)
         {
             _THIS = this;
-            _rtu.registerWorker(slaveId, READ_HOLD_REGISTER, &FC03);
+            _rtu.registerWorker(rtuServerId, READ_HOLD_REGISTER, &FC03);
         }
         Device<MODBUS_TYPE> _device;
 

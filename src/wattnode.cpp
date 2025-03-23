@@ -36,7 +36,7 @@
 // Protocol for WattNode register list:
 //   https://ctlsys.com/wp-content/uploads/2016/10/WNC-Modbus-Register-List-V18.xls
 //   https://ctlsys.com/wp-content/uploads/2016/10/WNC-Modbus-Manual-V18c.pdf
-const modbus_gateway::DeviceDescription<modbus_gateway::WattNode> &modbus_gateway::WattNode::getDeviceDescription()
+const modbus_gateway::DeviceDescription<modbus_gateway::WattNode> &modbus_gateway::WattNode::getDeviceDescription(uint16_t rtuServerId, uint32_t serialNumber)
 {
     static DeviceDescription<WattNode> dd =
         DeviceDescription<WattNode>::makeDD("wattnode",
@@ -130,14 +130,14 @@ const modbus_gateway::DeviceDescription<modbus_gateway::WattNode> &modbus_gatewa
                                                                  }},
                                              {"block1650", 1650, {
                                                                      {apply_config, DataType::int16, "Apply Config", "", Scaling::none, Value::_int16_t(0)},     // 0
-                                                                     {modbus_address, DataType::int16, "Modbus Address", "", Scaling::none, Value::_int16_t(RTU_SERVER_ID)}, // modbus address
+                                                                     {modbus_address, DataType::int16, "Modbus Address", "", Scaling::none, Value::_int16_t(rtuServerId)}, // modbus address
                                                                      {baud_rate, DataType::int16, "Baud Rate", "", Scaling::none, Value::_int16_t(0)},           // 4
                                                                      {parity_mode, DataType::int16, "Parity Mode", "", Scaling::none, Value::_int16_t(0)},       // 0
                                                                      {modbus_mode, DataType::int16, "Modbus Mode", "", Scaling::none, Value::_int16_t(0)},       // 0
                                                                      {message_delay, DataType::int16, "Message Delay", "ms", Scaling::ten, Value::_int16_t(0)}   // 5
                                                                  }},
                                              {"block1700", 1700, {
-                                                                     {serial_number, DataType::uint32, "Serial Number", "", Scaling::none, Value::_uint32_t(SERIAL_NUMBER)},   // serial number
+                                                                     {serial_number, DataType::uint32, "Serial Number", "", Scaling::none, Value::_uint32_t(serialNumber)},   // serial number
                                                                      {uptime, DataType::uint32, "Uptime", "s", Scaling::none, Value::_uint32_t(0)},                      // 0
                                                                      {total_uptime, DataType::uint32, "Total Uptime", "s", Scaling::none, Value::_uint32_t(0)},          // 0
                                                                      {wattnode_model, DataType::int16, "Wattnode Model", "", Scaling::none, Value::_int16_t(202)},       // 202

@@ -17,7 +17,7 @@ namespace modbus_gateway
     class WattNode
     {
     public:
-        static const DeviceDescription<WattNode> &getDeviceDescription();
+        static const DeviceDescription<WattNode> &getDeviceDescription(uint16_t rtuServerId, uint32_t serialNumber);
 
         // All defined registers. See the definition of each register in the .cpp file
         enum e_registers
