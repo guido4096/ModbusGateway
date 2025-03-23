@@ -88,11 +88,8 @@ namespace modbus_gateway
             DataAccess<Client<MODBUS_TYPE>> dataaccess(*t->_this);
             if (t->_blockindex >= 0)
             {
-                Values &values = dataaccess.GetValues()[t->_blockindex];
-                values._transaction = t->_transaction;
                 // Serial.printf("Response: serverID=%d, FC=%d, Token=%08X, length=%d, values=%i\r\n", response.getServerID(), response.getFunctionCode(), token, (response.size()-3), (values._values.size()*2) );
-
-                if ((values._values.size() * 2) == (response.size() - 3))
+                if ((dataaccess.getValuesSizeForBlock(t->_blockindex) * 2) == (response.size() - 3))
                 {
                     auto i = response.begin();
                     i += 3;
@@ -103,9 +100,10 @@ namespace modbus_gateway
                         Value v;
                         v.b2 = *i++;
                         v.b1 = *i++;
-                        values._values[uint32_t(index++)] = v.w;
+                        dataaccess.setValue(t->_blockindex, index++, v.w);
                     }
                     t->_this->_dataRead = true;
+                    dataaccess.setTransaction(t->_blockindex, t->_transaction);
                 }
             }
             else

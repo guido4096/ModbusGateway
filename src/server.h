@@ -43,25 +43,26 @@ namespace modbus_gateway
             DataAccess<Server<MODBUS_TYPE>> dataaccess(*_THIS);
 
             // Find the block
-            Values *bv = 0;
-            for (auto i = dataaccess.GetValues().begin(); i < dataaccess.GetValues().end(); i++)
+            uint32_t block_index = -1;
+            for (auto i = _THIS->_device._dd._blocks.begin(); i < _THIS->_device._dd._blocks.end(); i++)
             {
-                if (i->_block._offset <= address && (i->_block._offset + i->_block._number_reg) >= (address + words))
+                if (i->_offset <= address && (i->_offset + i->_number_reg) >= (address + words))
                 {
-                    bv = &(*i);
+                    block_index = i-_THIS->_device._dd._blocks.begin();
                     break;
                 }
             }
 
             // Did we find the block?
-            if (bv)
+            if (block_index >= 0)
             {
                 // Looks okay. Set up message with serverID, FC and length of data
                 response.add(request.getServerID(), request.getFunctionCode(), (uint8_t)(words * 2));
                 // Fill response with requested data
                 for (uint16_t i = address; i < address + words; ++i)
                 {
-                    response.add(uint16_t(bv->_values[i - bv->_block._offset]));
+                    uint16_t v=dataaccess.getValue(block_index, i - _THIS->_device._dd._blocks[block_index]._offset);
+                    response.add(v);
                 }
                 // Serial.printf("Response: serverID=%d, FC=%d, length=%d block=%s\n\r", response.getServerID(), response.getFunctionCode(), response.size(), bv->_block._name.c_str());
             }
