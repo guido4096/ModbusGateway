@@ -31,11 +31,11 @@ namespace modbus_gateway
         {
             bool result = false;
             uint32_t blockindex = _device.GetBlockIndex(name);
-            if (_device._dd._blocks[blockindex]._number_reg > 0)
+            if (_device._dd._bds[blockindex]._number_reg > 0)
             {
                 T *t = new T{this, blockindex, _transaction++};
                 static_assert(sizeof(T *) == sizeof(uint32_t));
-                Error err = _tcp.addRequest(reinterpret_cast<uint32_t>(t), 2, READ_HOLD_REGISTER, _device._dd._blocks[blockindex]._offset, _device._dd._blocks[blockindex]._number_reg);
+                Error err = _tcp.addRequest(reinterpret_cast<uint32_t>(t), 2, READ_HOLD_REGISTER, _device._dd._bds[blockindex]._offset, _device._dd._bds[blockindex]._number_reg);
                 // Serial.printf("readBlockFromMeter Token=%08X\r\n", t);
                 if (err != SUCCESS)
                 {
@@ -71,7 +71,7 @@ namespace modbus_gateway
             // ModbusError wraps the error code and provides a readable error message for it
             ModbusError me(error);
             T *t = reinterpret_cast<T *>(token);
-            Serial.printf("Error response: %02X - %s - %s - %i\r\n", (int)me, (const char *)me, t->_this->_device._dd._blocks[t->_blockindex]._name.c_str(), t->_transaction);
+            Serial.printf("Error response: %02X - %s - %s - %i\r\n", (int)me, (const char *)me, t->_this->_device._dd._bds[t->_blockindex]._name.c_str(), t->_transaction);
             delete t;
         }
 

@@ -286,15 +286,15 @@ namespace modbus_gateway
         ~BlockDescription() {}
 
         const String _name;
-        const std::vector<RegisterDescription> _registers;
+        const std::vector<RegisterDescription> _rds;
         const uint16_t _offset = 0;
         const uint16_t _number_reg = 0;
 
     private:
         template <typename MODBUS_TYPE>
         friend class DeviceDescription;
-        BlockDescription(const String &name, const std::vector<RegisterDescription> &registers, uint16_t offset, uint16_t number_reg)
-            : _name(name), _registers(registers), _offset(offset), _number_reg(number_reg)
+        BlockDescription(const String &name, const std::vector<RegisterDescription> &rds, uint16_t offset, uint16_t number_reg)
+            : _name(name), _rds(rds), _offset(offset), _number_reg(number_reg)
         {
         }
     };
@@ -328,11 +328,11 @@ namespace modbus_gateway
             char buf[200];
             sprintf(buf, "Device: %s\r\n", _name.c_str());
             result += buf;
-            for (auto i = _blocks.begin(); i < _blocks.end(); i++)
+            for (auto i = _bds.begin(); i < _bds.end(); i++)
             {
                 sprintf(buf, "  Block: %s, offset=0x%04x (%06u), numreg=%i\r\n", i->_name.c_str(), i->_offset, i->_offset, i->_number_reg);
                 result += buf;
-                for (auto j = i->_registers.begin(); j < i->_registers.end(); j++)
+                for (auto j = i->_rds.begin(); j < i->_rds.end(); j++)
                 {
                     sprintf(buf, "    Register 0x%04x (%06u): %s\r\n", j->_offset, j->_offset, j->_desc.c_str());
                     result += buf;
@@ -349,11 +349,11 @@ namespace modbus_gateway
         }
 
         const String _name;
-        const std::vector<BlockDescription> _blocks;
+        const std::vector<BlockDescription> _bds;
         const std::vector<RegisterReference> _rr;
 
     private:
-        DeviceDescription(const char *name, const std::vector<BlockDescription> &blocks, std::vector<RegisterReference> rr) : _blocks(blocks), _name(name), _rr(rr) {}
+        DeviceDescription(const char *name, const std::vector<BlockDescription> &bds, std::vector<RegisterReference> rr) : _bds(bds), _name(name), _rr(rr) {}
         static BlockDescription makeBlock(const String &name, uint16_t blockNbr, uint16_t offset, const std::vector<RegisterDefinition<MODBUS_TYPE>> &registers, std::vector<RegisterReference> &rr)
         {
             std::vector<RegisterDescription> rl;
@@ -373,27 +373,27 @@ namespace modbus_gateway
         }
     };
 
-    // BlockValues. This contains values for a block.
+    // Block. This contains values for a block.
     class Block
     {
     public:
-        Block(const BlockDescription &block, int32_t _number_reg) : _block(block), _transaction(0) { _values.resize(_number_reg); }
+        Block(const BlockDescription &bd, int32_t _number_reg) : _bd(bd), _transaction(0) { _registers.resize(_number_reg); }
 
         float getFloatValue(const RegisterDescription &r) const
         {
-            return r.toFloat32(&(_values[r._offset - _block._offset])) / getScaling(r._scaling);
+            return r.toFloat32(&(_registers[r._offset - _bd._offset])) / getScaling(r._scaling);
         }
         float getFloatValue(const RegisterReference &rr) const
         {
-            const RegisterDescription &r = _block._registers[rr._register_idx];
+            const RegisterDescription &r = _bd._rds[rr._register_idx];
             return getFloatValue(r);
         }
         void setFloatValue(const RegisterReference &rr, float f)
         {
-            const RegisterDescription &r = _block._registers[rr._register_idx];
+            const RegisterDescription &r = _bd._rds[rr._register_idx];
             Value v = Value::_float32_t(f);
-            _values[r._offset - _block._offset] = v.w1;
-            _values[r._offset - _block._offset + 1] = v.w2;
+            _registers[r._offset - _bd._offset] = v.w1;
+            _registers[r._offset - _bd._offset + 1] = v.w2;
         }
         String allValuesAsString() const
         {
@@ -403,20 +403,20 @@ namespace modbus_gateway
             // Transaction id
             sprintf(buf, "TransactionID=%i\r\n", _transaction);
             result = result += buf;
-            sprintf(buf, "Block %s\r\n", _block._name.c_str());
+            sprintf(buf, "Block %s\r\n", _bd._name.c_str());
             result = result += buf;
 
-            for (auto i = _block._registers.begin(); i < _block._registers.end(); i++)
+            for (auto i = _bd._rds.begin(); i < _bd._rds.end(); i++)
             {
-                String value = i->toString(&(_values[i->_offset - _block._offset]));
+                String value = i->toString(&(_registers[i->_offset - _bd._offset]));
                 sprintf(buf, "  %s=%s %s\n", i->_desc.c_str(), value.c_str(), i->_unit);
                 result += buf;
             }
             return result;
         }
 
-        const BlockDescription &_block;
-        std::vector<uint16_t> _values;
+        const BlockDescription &_bd;
+        std::vector<uint16_t> _registers;
         uint16_t _transaction;
     };
 
@@ -426,32 +426,32 @@ namespace modbus_gateway
     public:
         Device(const DeviceDescription<MODBUS_TYPE> &dd) : _dd(dd)
         {
-            for (auto i = _dd._blocks.begin(); i < _dd._blocks.end(); i++)
+            for (auto i = _dd._bds.begin(); i < _dd._bds.end(); i++)
             {
-                Block bv(*i, i->_number_reg);
+                Block b(*i, i->_number_reg);
                 modbus_gateway::Value v;
-                for (auto j = i->_registers.begin(); j < i->_registers.end(); j++)
+                for (auto j = i->_rds.begin(); j < i->_rds.end(); j++)
                 {
                     switch (j->_number)
                     {
                     case 1:
-                        bv._values[j->_offset - i->_offset] = j->_default.w;
+                        b._registers[j->_offset - i->_offset] = j->_default.w;
                         break;
                     case 2:
-                        bv._values[j->_offset - i->_offset] = j->_default.w1;
-                        bv._values[j->_offset - i->_offset + 1] = j->_default.w2;
+                        b._registers[j->_offset - i->_offset] = j->_default.w1;
+                        b._registers[j->_offset - i->_offset + 1] = j->_default.w2;
                         break;
                     }
                 }
-                _blocks.push_back(bv);
+                _blocks.push_back(b);
             }
         }
         uint32_t GetBlockIndex(const String &name)
         {
-            for (auto i = _dd._blocks.begin(); i < _dd._blocks.end(); i++)
+            for (auto i = _dd._bds.begin(); i < _dd._bds.end(); i++)
             {
                 if (i->_name == name)
-                    return i - _dd._blocks.begin();
+                    return i - _dd._bds.begin();
             }
             return -1;
         }
@@ -463,6 +463,10 @@ namespace modbus_gateway
         std::vector<Block> _blocks;
     };
 
+    // Only allow access to values through DataAccess. DataAccess takes care of
+    // Thread-Safe by locking and unlocking the mutex when it comes in and out of scope
+    // Instantiate this class to modify or retrieve values, but do not keep it around
+    // as it locks the mutex for thread synchronization
     template <typename MODBUS_TYPE>
     class DataAccess
     {
@@ -480,15 +484,15 @@ namespace modbus_gateway
         // Plain uint16_t values access
         void setValue(uint32_t block_idx, uint32_t val_index, uint16_t val)
         {
-            _s._device._blocks[block_idx]._values[val_index] = val;
+            _s._device._blocks[block_idx]._registers[val_index] = val;
         }
         uint16_t getValue(uint32_t block_idx, uint32_t val_index)
         {
-            return _s._device._blocks[block_idx]._values[val_index];
+            return _s._device._blocks[block_idx]._registers[val_index];
         }
         uint32_t getValuesSizeForBlock(uint32_t block_idx)
         {
-            return _s._device._blocks[block_idx]._values.size();
+            return _s._device._blocks[block_idx]._registers.size();
         }
 
         

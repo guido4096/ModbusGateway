@@ -44,11 +44,11 @@ namespace modbus_gateway
 
             // Find the block
             uint32_t block_index = -1;
-            for (auto i = _THIS->_device._dd._blocks.begin(); i < _THIS->_device._dd._blocks.end(); i++)
+            for (auto i = _THIS->_device._dd._bds.begin(); i < _THIS->_device._dd._bds.end(); i++)
             {
                 if (i->_offset <= address && (i->_offset + i->_number_reg) >= (address + words))
                 {
-                    block_index = i-_THIS->_device._dd._blocks.begin();
+                    block_index = i-_THIS->_device._dd._bds.begin();
                     break;
                 }
             }
@@ -61,7 +61,7 @@ namespace modbus_gateway
                 // Fill response with requested data
                 for (uint16_t i = address; i < address + words; ++i)
                 {
-                    uint16_t v=dataaccess.getValue(block_index, i - _THIS->_device._dd._blocks[block_index]._offset);
+                    uint16_t v=dataaccess.getValue(block_index, i - _THIS->_device._dd._bds[block_index]._offset);
                     response.add(v);
                 }
                 // Serial.printf("Response: serverID=%d, FC=%d, length=%d block=%s\n\r", response.getServerID(), response.getFunctionCode(), response.size(), bv->_block._name.c_str());
