@@ -56,11 +56,11 @@ IPAddress remote()
     return a;
 }
 ModbusClientTCP tcp(theClient);
-modbus_gateway::Client<modbus_gateway::EM24> meter(tcp, remote());
+modbus_gateway::Client<modbus_gateway::EM24> meter(tcp, remote(), TCP_SERVER_ID);
 
 // TCP Slave
 ModbusServerRTU rtu(1000);
-modbus_gateway::Server<modbus_gateway::WattNode> wattnode(rtu, SLAVE_ID);
+modbus_gateway::Server<modbus_gateway::WattNode> wattnode(rtu, RTU_SERVER_ID);
 
 // Converter mapping
 modbus_gateway::ConvertEM24ToWattNode converter(meter, wattnode);

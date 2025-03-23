@@ -20,8 +20,8 @@ namespace modbus_gateway
     public:
         using RegisterType = typename MODBUS_TYPE::e_registers;
 
-        Client(ModbusClientTCP &tcp, const IPAddress &remote)
-            : _device(MODBUS_TYPE::getDeviceDescription()), _tcp(tcp), _remote(remote), _transaction(0)
+        Client(ModbusClientTCP &tcp, const IPAddress &remote, uint16_t tcp_server_id)
+            : _device(MODBUS_TYPE::getDeviceDescription()), _tcp(tcp), _remote(remote), _transaction(0), _tcp_server_id(tcp_server_id)
         {
             _tcp.onDataHandler(&Client::handleData);
             _tcp.onErrorHandler(&Client::handleError);
@@ -35,7 +35,7 @@ namespace modbus_gateway
             {
                 T *t = new T{this, blockindex, _transaction++};
                 static_assert(sizeof(T *) == sizeof(uint32_t));
-                Error err = _tcp.addRequest(reinterpret_cast<uint32_t>(t), 2, READ_HOLD_REGISTER, _device._dd._bds[blockindex]._offset, _device._dd._bds[blockindex]._number_reg);
+                Error err = _tcp.addRequest(reinterpret_cast<uint32_t>(t), _tcp_server_id, READ_HOLD_REGISTER, _device._dd._bds[blockindex]._offset, _device._dd._bds[blockindex]._number_reg);
                 // Serial.printf("readBlockFromMeter Token=%08X\r\n", t);
                 if (err != SUCCESS)
                 {
@@ -116,6 +116,7 @@ namespace modbus_gateway
         uint32_t _transaction;
         ModbusClientTCP &_tcp;
         IPAddress _remote;
+        uint16_t _tcp_server_id;
         mutable std::timed_mutex _Mutex;
     };
 }

@@ -130,7 +130,7 @@ const modbus_gateway::DeviceDescription<modbus_gateway::WattNode> &modbus_gatewa
                                                                  }},
                                              {"block1650", 1650, {
                                                                      {apply_config, DataType::int16, "Apply Config", "", Scaling::none, Value::_int16_t(0)},     // 0
-                                                                     {modbus_address, DataType::int16, "Modbus Address", "", Scaling::none, Value::_int16_t(SLAVE_ID)}, // modbus address
+                                                                     {modbus_address, DataType::int16, "Modbus Address", "", Scaling::none, Value::_int16_t(RTU_SERVER_ID)}, // modbus address
                                                                      {baud_rate, DataType::int16, "Baud Rate", "", Scaling::none, Value::_int16_t(0)},           // 4
                                                                      {parity_mode, DataType::int16, "Parity Mode", "", Scaling::none, Value::_int16_t(0)},       // 0
                                                                      {modbus_mode, DataType::int16, "Modbus Mode", "", Scaling::none, Value::_int16_t(0)},       // 0
