@@ -343,11 +343,6 @@ namespace modbus_gateway
             return result;
         }
 
-        RegisterReference getRegisterReference(RegisterType r) const
-        {
-            return _rr[r];
-        }
-
         const String _name;
         const std::vector<BlockDescription> _bds;
         const std::vector<RegisterReference> _rr;
@@ -379,22 +374,9 @@ namespace modbus_gateway
     public:
         Block(const BlockDescription &bd, int32_t _number_reg) : _bd(bd), _transaction(0) { _registers.resize(_number_reg); }
 
-        float getFloatValue(const RegisterDescription &r) const
-        {
-            return r.toFloat32(&(_registers[r._offset - _bd._offset])) / getScaling(r._scaling);
-        }
-        float getFloatValue(const RegisterReference &rr) const
-        {
-            const RegisterDescription &r = _bd._rds[rr._register_idx];
-            return getFloatValue(r);
-        }
-        void setFloatValue(const RegisterReference &rr, float f)
-        {
-            const RegisterDescription &r = _bd._rds[rr._register_idx];
-            Value v = Value::_float32_t(f);
-            _registers[r._offset - _bd._offset] = v.w1;
-            _registers[r._offset - _bd._offset + 1] = v.w2;
-        }
+        const BlockDescription &_bd;
+
+    private:
         String allValuesAsString() const
         {
             String result;
@@ -414,8 +396,25 @@ namespace modbus_gateway
             }
             return result;
         }
+        float getFloatValue(const RegisterDescription &r) const
+        {
+            return r.toFloat32(&(_registers[r._offset - _bd._offset])) / getScaling(r._scaling);
+        }
+        float getFloatValue(const RegisterReference &rr) const
+        {
+            const RegisterDescription &r = _bd._rds[rr._register_idx];
+            return getFloatValue(r);
+        }
+        void setFloatValue(const RegisterReference &rr, float f)
+        {
+            const RegisterDescription &r = _bd._rds[rr._register_idx];
+            Value v = Value::_float32_t(f);
+            _registers[r._offset - _bd._offset] = v.w1;
+            _registers[r._offset - _bd._offset + 1] = v.w2;
+        }
+        template <typename T>
+        friend class Device;
 
-        const BlockDescription &_bd;
         std::vector<uint16_t> _registers;
         uint16_t _transaction;
     };
@@ -424,6 +423,7 @@ namespace modbus_gateway
     class Device
     {
     public:
+        using RegisterType = typename MODBUS_TYPE::e_registers;
         Device(const DeviceDescription<MODBUS_TYPE> &dd) : _dd(dd)
         {
             for (auto i = _dd._bds.begin(); i < _dd._bds.end(); i++)
@@ -446,7 +446,7 @@ namespace modbus_gateway
                 _blocks.push_back(b);
             }
         }
-        uint32_t GetBlockIndex(const String &name)
+        uint32_t GetBlockIndex(const String &name) const
         {
             for (auto i = _dd._bds.begin(); i < _dd._bds.end(); i++)
             {
@@ -458,13 +458,60 @@ namespace modbus_gateway
         const DeviceDescription<MODBUS_TYPE> &_dd;
 
     private:
+        // Plain uint16_t values access
+        void setRegister(uint32_t block_idx, uint32_t val_index, uint16_t val)
+        {
+            _blocks[block_idx]._registers[val_index] = val;
+        }
+        uint16_t getRegister(uint32_t block_idx, uint32_t val_index)
+        {
+            return _blocks[block_idx]._registers[val_index];
+        }
+        void setFloatValue(RegisterType r, float i)
+        {
+            RegisterReference rr = _dd._rr[r];
+            if (rr._block_idx >= 0 && rr._register_idx >= 0)
+            {
+                _blocks[rr._block_idx].setFloatValue(rr, i);
+                // Serial.printf("setFloatValue %s %i %i %i %i=%f\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx, r._blockNbr, r._offset, i);
+            }
+            else
+            {
+                Serial.printf("modbus_gateway::ConvertEM24ToWattNode::setFloatValue invalid reference for register %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
+            }
+        }
+        float getFloatValue(RegisterType r)
+        {
+            float f = 0;
+            RegisterReference rr = _dd._rr[r];
+            if (rr._block_idx >= 0 && rr._register_idx >= 0)
+            {
+                f = _blocks[rr._block_idx].getFloatValue(rr);
+            }
+            else
+            {
+                Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
+            }
+            return f;
+        }
+        void setTransaction(uint32_t block_idx, uint32_t t)
+        {
+            _blocks[block_idx]._transaction - t;
+        }
+        String allValuesAsString() const
+        {
+            String r = "";
+            for (auto i = _blocks.begin(); i < _blocks.end(); i++)
+                r += i->allValuesAsString();
+            return r;
+        }
         template <typename T>
         friend class DataAccess;
         std::vector<Block> _blocks;
     };
 
-    // Only allow access to values through DataAccess. DataAccess takes care of
-    // Thread-Safe by locking and unlocking the mutex when it comes in and out of scope
+    // The only way to access values is through DataAccess. DataAccess takes care of
+    // Thread-Safety by locking and unlocking the mutex when it comes in and out of scope
     // Instantiate this class to modify or retrieve values, but do not keep it around
     // as it locks the mutex for thread synchronization
     template <typename MODBUS_TYPE>
@@ -480,57 +527,39 @@ namespace modbus_gateway
         {
             _s._Mutex.unlock();
         }
+        DataAccess& operator=(const DataAccess&) = delete;
+        DataAccess(const DataAccess&) = delete;
+        DataAccess() = delete;
 
         // Plain uint16_t values access
         void setRegister(uint32_t block_idx, uint32_t val_index, uint16_t val)
         {
-            _s._device._blocks[block_idx]._registers[val_index] = val;
+            _s._device.setRegister(block_idx, val_index, val);
         }
         uint16_t getRegister(uint32_t block_idx, uint32_t val_index)
         {
-            return _s._device._blocks[block_idx]._registers[val_index];
+            return _s._device.getRegister(block_idx, val_index);
         }
-        
+
         void setTransaction(uint32_t block_idx, uint32_t t)
         {
-            _s._device._blocks[block_idx]._transaction - t;
+            _s._device.setTransaction(block_idx, t);
         }
 
         String allValuesAsString() const
         {
-            String r = "";
-            for (auto i = _s._device._blocks.begin(); i < _s._device._blocks.end(); i++)
-                r += i->allValuesAsString();
-            return r;
+            return _s._device.allValuesAsString();
         }
-        
+
         void setFloatValue(RegisterType r, float i)
         {
-            RegisterReference rr = _s._device._dd.getRegisterReference(r);
-            if (rr._block_idx >= 0 && rr._register_idx >= 0)
-            {
-                _s._device._blocks[rr._block_idx].setFloatValue(rr, i);
-                // Serial.printf("setFloatValue %s %i %i %i %i=%f\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx, r._blockNbr, r._offset, i);
-            }
-            else
-            {
-                Serial.printf("modbus_gateway::ConvertEM24ToWattNode::setFloatValue invalid reference for register %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
-            }
+            _s._device.setFloatValue(r, i);
         }
         float getFloatValue(RegisterType r)
         {
-            float f = 0;
-            RegisterReference rr = _s._device._dd.getRegisterReference(r);
-            if (rr._block_idx >= 0 && rr._register_idx >= 0)
-            {
-                f = _s._device._blocks[rr._block_idx].getFloatValue(rr);
-            }
-            else
-            {
-                Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
-            }
-            return f;
+            return _s._device.getFloatValue(r);
         }
+
     private:
         MODBUS_TYPE &_s;
     };
