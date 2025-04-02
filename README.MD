@@ -30,7 +30,3 @@ The gateway translates the registers and values as needed.
 9. Click (→) to upload firmware
 10. Click (plug symbol) to monitor serial output
 
-## 2 RESOURCE
-
-* [T-ETH-PRO POE Module datasheet](./datasheet/ETH-PRO-POE-DP5300-12V.pdf)
-

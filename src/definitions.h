@@ -510,7 +510,7 @@ namespace modbus_gateway
         std::vector<Block> _blocks;
     };
 
-    // The only way to access values is through DataAccess. DataAccess takes care of
+    // You should only access data through DataAccess. DataAccess takes care of
     // Thread-Safety by locking and unlocking the mutex when it comes in and out of scope
     // Instantiate this class to modify or retrieve values, but do not keep it around
     // as it locks the mutex for thread synchronization
