@@ -13,10 +13,10 @@
 #include <vector>
 namespace modbus_gateway
 {
-    class EM24
+    class EM24_E1
     {
     public:
-        static const DeviceDescription<EM24> &getDeviceDescription();
+        static const DeviceDescription<EM24_E1> &getDeviceDescription();
 
         // All defined registers. See the definition of each register in the .cpp file
         enum e_registers

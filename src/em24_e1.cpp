@@ -4,18 +4,18 @@
  * @license   MIT
  * @copyright Copyright (c) 2025 Guido Jansen
  * @date      04-Mar-2025
- * @note      EM24 Modbus Definitions
+ * @note      EM24_E1 Modbus Definitions
  */
 #include <Arduino.h>
-#include <em24.h>
+#include <em24_e1.h>
 #include <vector>
 
-// Protocol for EM24 register list:
+// Protocol for EM24_E1 register list:
 //   https://www.enika.eu/data/files/produkty/energy%20m/CP/em24%20ethernet%20cp.pdf
-const modbus_gateway::DeviceDescription<modbus_gateway::EM24> &modbus_gateway::EM24::getDeviceDescription()
+const modbus_gateway::DeviceDescription<modbus_gateway::EM24_E1> &modbus_gateway::EM24_E1::getDeviceDescription()
 {
-    static DeviceDescription<EM24> dd =
-        DeviceDescription<EM24>::makeDD("em24",
+    static DeviceDescription<EM24_E1> dd =
+        DeviceDescription<EM24_E1>::makeDD("em24_e1",
                                         {{"dynamic", 0x0000, {
                                                                  {l1_voltage, DataType::int32, "L1 Voltage", "V", Scaling::ten, Value::_int32_t(0)},
                                                                  {l2_voltage, DataType::int32, "L2 Voltage", "V", Scaling::ten, Value::_int32_t(0)},

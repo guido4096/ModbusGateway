@@ -21,9 +21,9 @@
 #include "definitions.h"
 #include "server.h"
 #include "client.h"
-#include "em24.h"
+#include "em24_e1.h"
 #include "wattnode.h"
-#include "convert_em24_to_wattnode.h"
+#include "convert_em24_e1_to_wattnode.h"
 #include "ModbusClientTCP.h"
 #include "ModbusServerRTU.h"
 #include "RTUutils.h"
@@ -56,14 +56,14 @@ IPAddress remote()
     return a;
 }
 ModbusClientTCP tcp(theClient);
-modbus_gateway::Client<modbus_gateway::EM24> meter(tcp, remote(), TCP_SERVER_ID);
+modbus_gateway::Client<modbus_gateway::EM24_E1> meter(tcp, remote(), TCP_SERVER_ID);
 
 // TCP Slave
 ModbusServerRTU rtu(1000);
 modbus_gateway::Server<modbus_gateway::WattNode> wattnode(rtu, RTU_SERVER_ID, SERIAL_NUMBER);
 
 // Converter mapping
-modbus_gateway::ConvertEM24ToWattNode converter(meter, wattnode);
+modbus_gateway::ConvertEM24_E1ToWattNode converter(meter, wattnode);
 
 // How the RS485 port is connected to pins
 #define BOARD_485_TX 33
@@ -87,7 +87,7 @@ void handleRoot()
 
 void handleMeter()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24>> m(meter);
+    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24_E1>> m(meter);
     String r = m.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
