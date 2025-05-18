@@ -292,7 +292,7 @@ void loop()
     // use elapsed time to know when to add a new job
     unsigned long currTime = millis();
     bool jobScheduled = false;
-    if (currTime - prevTime1 >= 200) // Instantaneous variables, update regularly
+    if (currTime - prevTime1 >= 250) // Instantaneous variables, update regularly
     {
         meter.readBlockFromMeter("dynamic");
         prevTime1 = currTime;
