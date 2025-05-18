@@ -60,7 +60,7 @@ IPAddress remote()
     a.fromString(REMOTE);
     return a;
 }
-ModbusClientTCP tcp(theClient);
+ModbusClientTCP tcp(theClient, 10);
 modbus_gateway::Client<modbus_gateway::EM24_E1> meter(tcp, remote(), TCP_SERVER_ID);
 
 // TCP Slave
@@ -236,7 +236,7 @@ void setup()
  
 
     // Setup timers to allow tracking elapsed time
-    prevTime1 = millis() - 5000; // trigger timers immediately at startup
+    prevTime1 = millis() - 10000; // trigger timers immediately at startup
     prevTime2 = prevTime1;
     prevTime3 = prevTime1;
 
@@ -292,19 +292,19 @@ void loop()
     // use elapsed time to know when to add a new job
     unsigned long currTime = millis();
     bool jobScheduled = false;
-    if (currTime - prevTime1 >= 300) // Instantaneous variables, update regularly
+    if (currTime - prevTime1 >= 250) // Instantaneous variables, update regularly
     {
         meter.readBlockFromMeter("dynamic");
         prevTime1 = currTime;
         jobScheduled= true;
     }
-    if (currTime - prevTime2 >= 1000) // Updated every second
+    if (currTime - prevTime2 >= 2000) // Updated every two seconds
     {
         meter.readBlockFromMeter("energy");
         prevTime2 = currTime;
         jobScheduled= true;
     }
-    if (currTime - prevTime3 >= 4700) // This hardly ever changes
+    if (currTime - prevTime3 >= 10000) // This hardly ever changes
     { 
 
         meter.readBlockFromMeter("time");

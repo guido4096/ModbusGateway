@@ -64,7 +64,10 @@ namespace modbus_gateway
                     uint16_t v=dataaccess.getRegister(block_index, i - _THIS->_device._dd._bds[block_index]._offset);
                     response.add(v);
                 }
-                // Serial.printf("Response: serverID=%d, FC=%d, length=%d block=%s\n\r", response.getServerID(), response.getFunctionCode(), response.size(), bv->_block._name.c_str());
+                char buffer[200];
+                sprintf(buffer,"Response: serverID=%d, FC=%d, start=%d length=%d block=%s", response.getServerID(), response.getFunctionCode(), address, words, _THIS->_device._dd._bds[block_index]._name.c_str());
+                //Serial.printf("%s\r\n", buffer);
+                dataaccess.logMessage(buffer);            
             }
             else
             {

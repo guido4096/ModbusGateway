@@ -27,21 +27,33 @@ namespace modbus_gateway
             _tcp.onErrorHandler(&Client::handleError);
         }
 
-        bool readBlockFromMeter(const String &name)
+        bool readFromMeter(RegisterType begin, RegisterType end)
+        {
+            RegisterReference b = _device._dd._rr[begin];
+            RegisterReference e = _device._dd._rr[end];
+            RegisterDescription rd_b = _device._dd._bds[b._block_idx]._rds[b._register_idx];
+            RegisterDescription rd_e = _device._dd._bds[e._block_idx]._rds[e._register_idx];
+            return readFromMeter(rd_b, rd_e);
+        }
+
+        bool readFromMeter(RegisterDescription b, RegisterDescription e)
         {
             bool result = false;
-            uint32_t blockindex = _device.GetBlockIndex(name);
-            if (_device._dd._bds[blockindex]._number_reg > 0)
+            if (b._blockNbr == e._blockNbr && b._offset <= e._offset)
             {
-                T *t = new T{this, blockindex, _transaction++};
                 static_assert(sizeof(T *) == sizeof(uint32_t));
-                Error err = _tcp.addRequest(reinterpret_cast<uint32_t>(t), _tcp_server_id, READ_HOLD_REGISTER, _device._dd._bds[blockindex]._offset, _device._dd._bds[blockindex]._number_reg);
+
+                uint16_t start_reg = b._offset;
+                uint16_t nbr_reg = e._offset - b._offset + e._number;
+                T *t = new T{this, b._blockNbr, start_reg, nbr_reg, _transaction++};
+
+                Error err = _tcp.addRequest(reinterpret_cast<uint32_t>(t), _tcp_server_id, READ_HOLD_REGISTER, start_reg, nbr_reg);
                 // Serial.printf("readBlockFromMeter Token=%08X\r\n", t);
                 if (err != SUCCESS)
                 {
                     char buffer[200];
                     ModbusError e(err);
-                    sprintf(buffer, "Error creating request: %02X - %s, %i", (int)e, (const char *)e, _tcp.pendingRequests());
+                    sprintf(buffer, "Error creating request: %02X - %s, offset=%i, nbr_reg=%i, %i", (int)e, start_reg, nbr_reg, (const char *)e, _tcp.pendingRequests());
                     Serial.printf("%s\r\n", buffer);
                     _log.addString(buffer);
                 }
@@ -49,6 +61,17 @@ namespace modbus_gateway
                 {
                     result = true;
                 }
+            }
+            return result;
+        }
+
+        bool readBlockFromMeter(const String &name)
+        {
+            bool result = false;
+            uint32_t blockindex = _device.GetBlockIndex(name);
+            if (_device._dd._bds[blockindex]._number_reg > 0)
+            {
+              result =  readFromMeter( _device._dd._bds[blockindex]._rds.front(), _device._dd._bds[blockindex]._rds.back());
             }
             return result;
         }
@@ -64,6 +87,8 @@ namespace modbus_gateway
         {
             Client *_this;
             uint32_t _blockindex;
+            uint32_t _start_reg;
+            uint32_t _nbr_reg;
             uint32_t _transaction;
         };
 
@@ -95,11 +120,11 @@ namespace modbus_gateway
             if (t->_blockindex >= 0)
             {
                 // Serial.printf("Response: serverID=%d, FC=%d, Token=%08X, length=%d, values=%i\r\n", response.getServerID(), response.getFunctionCode(), token, (response.size()-3), (values._values.size()*2) );
-                if ((t->_this->_device._dd._bds[t->_blockindex]._number_reg * 2) == (response.size() - 3))
+                if ((t->_nbr_reg*2) == (response.size() - 3))
                 {
                     auto i = response.begin();
                     i += 3;
-                    int index = 0;
+                    int index = 0+(t->_start_reg - t->_this->_device._dd._bds[t->_blockindex]._offset);
 
                     while (i < response.end())
                     {
@@ -110,6 +135,12 @@ namespace modbus_gateway
                     }
                     t->_this->_dataRead = true;
                     dataaccess.setTransaction(t->_blockindex, t->_transaction);
+                }
+                else {
+                    char buffer[200];
+                    sprintf(buffer,"Expected bytes: %i, received bytes: %i", t->_nbr_reg*2, response.size() - 3);
+                    Serial.printf("%s\r\n", buffer);
+                    t->_this->_log.addString(buffer);
                 }
             }
             else
