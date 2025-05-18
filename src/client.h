@@ -53,7 +53,7 @@ namespace modbus_gateway
                 {
                     char buffer[200];
                     ModbusError e(err);
-                    sprintf(buffer, "Error creating request: %02X - %s, offset=%i, nbr_reg=%i, %i", (int)e, start_reg, nbr_reg, (const char *)e, _tcp.pendingRequests());
+                    sprintf(buffer, "Error creating request: %02X - %s, offset=%i, nbr_reg=%i, %i", (int)e, (const char *)e, start_reg, nbr_reg, _tcp.pendingRequests());
                     Serial.printf("%s\r\n", buffer);
                     _log.addString(buffer);
                 }
