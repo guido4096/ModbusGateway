@@ -80,16 +80,14 @@ unsigned long prevTime1;
 unsigned long prevTime2;
 unsigned long prevTime3;
 
-// Log
-//modbus_gateway::Log mylog;
-
 void handleRoot()
 {
     String r = "\
     <a href=\"wattnode\">WattNode values</a><br/>\
     <a href=\"meter\">Meter values</a><br/>\
     <a href=\"description\">Description of WattNode and Meter device</a><br/>\
-    <a href=\"log\">Log messsages</a><br/>\
+    <a href=\"logmeter\">Log Meter messsages</a><br/>\
+    <a href=\"logwattnode\">Log Wattnode messsages</a><br/>\
     ";
     server.send(200, "text/html", r.c_str());
 }
@@ -116,13 +114,22 @@ void handleDescription()
     server.send(200, "text/plain", r.c_str());
 }
 
-void handleLog()
+void handleLogMeter()
 {
     modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24_E1>> m(meter);
 
     String r = m.getLog();
     server.send(200, "text/plain", r.c_str());
 }
+
+void handleLogWattnode()
+{
+    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::WattNode>> wn(wattnode);
+
+    String r = wn.getLog();
+    server.send(200, "text/plain", r.c_str());
+}
+
 void handleNotFound()
 {
     String message = "File Not Found\n\n";
@@ -215,7 +222,8 @@ void setup()
     server.on("/description", handleDescription);
     server.on("/meter", handleMeter);
     server.on("/wattnode", handleWattnode);
-    server.on("/log", handleLog);
+    server.on("/logmeter", handleLogMeter);
+    server.on("/logwattnode", handleLogWattnode);
     server.onNotFound(handleNotFound);
 
     server.begin();

@@ -10,7 +10,7 @@
 
 #include <Arduino.h>
 #include <vector>
-#include <TimeLib.h>
+#include <time.h>
 
 namespace modbus_gateway
 {
@@ -25,12 +25,11 @@ namespace modbus_gateway
         void addString(const String& s)
         {
             String v;
-            tmElements_t t;
-            breakTime(now(), t);
-            
+            struct tm timeinfo;
+            getLocalTime(&timeinfo);
             char buffer[100] = "";
             sprintf(buffer, "%04u-%02u-%02u %u:%02u:%02u: ",
-                t.Year, t.Month, t.Day, t. Hour, t.Minute, t.Second
+                1900+timeinfo.tm_year, timeinfo.tm_mon, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec
             );
             v = buffer;
             v += s;
@@ -609,6 +608,11 @@ namespace modbus_gateway
         String getLog()
         {
             return _s._log.allValuesAsString();
+        }
+
+        void logMessage(String m)
+        {
+            _s._log.addString(m);
         }
 
     private:

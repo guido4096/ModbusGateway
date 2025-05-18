@@ -70,10 +70,14 @@ namespace modbus_gateway
             {
                 // No, either address or words are outside the limits. Set up error response.
                 response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
-                Serial.printf("Error: serverID=%d, FC=%d, length=%d\n\r", response.getServerID(), response.getFunctionCode(), response.size());
+                char buffer[200];
+                sprintf(buffer,"Error: serverID=%d, FC=%d, length=%d", response.getServerID(), response.getFunctionCode(), response.size());
+                Serial.printf("%s\r\n", buffer);
+                dataaccess.logMessage(buffer);
             }
             return response;
         }
+        modbus_gateway::Log _log;
         template <typename T>
         friend class DataAccess;
         inline static Server<MODBUS_TYPE> *_THIS;
