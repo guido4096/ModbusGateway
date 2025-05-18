@@ -10,9 +10,55 @@
 
 #include <Arduino.h>
 #include <vector>
+#include <TimeLib.h>
 
 namespace modbus_gateway
 {
+    class Log 
+    {
+        public:
+        Log()
+        {
+            _log.resize(_max);
+            _current = 0;
+        }
+        void addString(const String& s)
+        {
+            String v;
+            tmElements_t t;
+            breakTime(now(), t);
+            
+            char buffer[100] = "";
+            sprintf(buffer, "%04u-%02u-%02u %u:%02u:%02u: ",
+                t.Year, t.Month, t.Day, t. Hour, t.Minute, t.Second
+            );
+            v = buffer;
+            v += s;
+             _log[_current++] = v;
+            if (_current >= _max)
+                _current = 0;
+        }
+
+        String allValuesAsString()
+        {
+            String r;
+
+            for (int i = 0; i < _max; i++)
+            {
+                int c = _current-i-1;
+                if (c <0)
+                    c+=_max;
+                r+=_log[c];
+                r+="\r\n";
+            }
+            return r;
+        }
+
+        private:
+        const int           _max = 200;
+        int                 _current;
+        std::vector<String> _log;
+    };
     enum DataType
     {
         float32,
@@ -558,6 +604,11 @@ namespace modbus_gateway
         float getFloatValue(RegisterType r)
         {
             return _s._device.getFloatValue(r);
+        }
+
+        String getLog()
+        {
+            return _s._log.allValuesAsString();
         }
 
     private:

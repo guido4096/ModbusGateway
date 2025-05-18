@@ -29,12 +29,17 @@
 #include "RTUutils.h"
 #include "EthernetClient.h"
 #include "WiFiClient.h"
+#include "time.h"
+
 static bool eth_connected = false;
 WebServer server(80);
 
 WiFiClient theClient;
 
-
+// NTP Server
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = 3600;
+const int   daylightOffset_sec = 3600;
 
 // What is the name of the device
 // Passed as MACRO through a build_flag in secrets.ini
@@ -75,12 +80,16 @@ unsigned long prevTime1;
 unsigned long prevTime2;
 unsigned long prevTime3;
 
+// Log
+//modbus_gateway::Log mylog;
+
 void handleRoot()
 {
     String r = "\
     <a href=\"wattnode\">WattNode values</a><br/>\
     <a href=\"meter\">Meter values</a><br/>\
     <a href=\"description\">Description of WattNode and Meter device</a><br/>\
+    <a href=\"log\">Log messsages</a><br/>\
     ";
     server.send(200, "text/html", r.c_str());
 }
@@ -107,6 +116,13 @@ void handleDescription()
     server.send(200, "text/plain", r.c_str());
 }
 
+void handleLog()
+{
+    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24_E1>> m(meter);
+
+    String r = m.getLog();
+    server.send(200, "text/plain", r.c_str());
+}
 void handleNotFound()
 {
     String message = "File Not Found\n\n";
@@ -186,6 +202,9 @@ void setup()
         delay(500);
     }
 
+    // Init and get the time
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+    
     if (MDNS.begin(DEVICENAME))
     {
         Serial.println("MDNS responder started");
@@ -196,6 +215,7 @@ void setup()
     server.on("/description", handleDescription);
     server.on("/meter", handleMeter);
     server.on("/wattnode", handleWattnode);
+    server.on("/log", handleLog);
     server.onNotFound(handleNotFound);
 
     server.begin();
@@ -263,15 +283,18 @@ void loop()
 
     // use elapsed time to know when to add a new job
     unsigned long currTime = millis();
-    if (currTime - prevTime1 >= 500) // Instantaneous variables, update regularly
+    bool jobScheduled = false;
+    if (currTime - prevTime1 >= 300) // Instantaneous variables, update regularly
     {
         meter.readBlockFromMeter("dynamic");
         prevTime1 = currTime;
+        jobScheduled= true;
     }
     if (currTime - prevTime2 >= 1000) // Updated every second
     {
         meter.readBlockFromMeter("energy");
         prevTime2 = currTime;
+        jobScheduled= true;
     }
     if (currTime - prevTime3 >= 4700) // This hardly ever changes
     { 
@@ -279,6 +302,7 @@ void loop()
         meter.readBlockFromMeter("time");
         meter.readBlockFromMeter("tariff");
         prevTime3 = currTime;
+        jobScheduled= true;
     }
 
     // Received data from the meter and it is now stored in the meter object
@@ -288,4 +312,6 @@ void loop()
         converter.CopyDataFromMasterToSlave();
         meter._dataRead = false;
     }
+    if (jobScheduled)
+        delay(100);
 }

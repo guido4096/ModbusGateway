@@ -20,7 +20,7 @@ namespace modbus_gateway
     public:
         using RegisterType = typename MODBUS_TYPE::e_registers;
 
-        Client(ModbusClientTCP &tcp, const IPAddress &remote, uint16_t tcp_server_id)
+        Client(ModbusClientTCP &tcp, const IPAddress &remote, uint16_t tcp_server_id )
             : _device(MODBUS_TYPE::getDeviceDescription()), _tcp(tcp), _remote(remote), _transaction(0), _tcp_server_id(tcp_server_id)
         {
             _tcp.onDataHandler(&Client::handleData);
@@ -39,8 +39,11 @@ namespace modbus_gateway
                 // Serial.printf("readBlockFromMeter Token=%08X\r\n", t);
                 if (err != SUCCESS)
                 {
+                    char buffer[200];
                     ModbusError e(err);
-                    Serial.printf("Error creating request: %02X - %s\r\n", (int)e, (const char *)e);
+                    sprintf(buffer, "Error creating request: %02X - %s, %i", (int)e, (const char *)e, _tcp.pendingRequests());
+                    Serial.printf("%s\r\n", buffer);
+                    _log.addString(buffer);
                 }
                 else
                 {
@@ -71,7 +74,10 @@ namespace modbus_gateway
             // ModbusError wraps the error code and provides a readable error message for it
             ModbusError me(error);
             T *t = reinterpret_cast<T *>(token);
-            Serial.printf("Error response: %02X - %s - %s - %i\r\n", (int)me, (const char *)me, t->_this->_device._dd._bds[t->_blockindex]._name.c_str(), t->_transaction);
+            char buffer[200];
+            sprintf(buffer,"Error response: %02X - %s - %s - %i - %i", (int)me, (const char *)me, t->_this->_device._dd._bds[t->_blockindex]._name.c_str(), t->_transaction, t->_this->_tcp.pendingRequests());
+            Serial.printf("%s\r\n", buffer);
+            t->_this->_log.addString(buffer);
             delete t;
         }
 
@@ -113,6 +119,7 @@ namespace modbus_gateway
             delete t;
         }
 
+        modbus_gateway::Log _log;
         uint32_t _transaction;
         ModbusClientTCP &_tcp;
         IPAddress _remote;
