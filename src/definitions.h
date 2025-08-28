@@ -14,26 +14,25 @@
 
 namespace modbus_gateway
 {
-    class Log 
+    class Log
     {
-        public:
+    public:
         Log()
         {
             _log.resize(_max);
             _current = 0;
         }
-        void addString(const String& s)
+        void addString(const String &s)
         {
             String v;
             struct tm timeinfo;
             getLocalTime(&timeinfo);
             char buffer[100] = "";
             sprintf(buffer, "%04u-%02u-%02u %u:%02u:%02u: ",
-                1900+timeinfo.tm_year, timeinfo.tm_mon, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec
-            );
+                    1900 + timeinfo.tm_year, timeinfo.tm_mon, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
             v = buffer;
             v += s;
-             _log[_current++] = v;
+            _log[_current++] = v;
             if (_current >= _max)
                 _current = 0;
         }
@@ -44,18 +43,18 @@ namespace modbus_gateway
 
             for (int i = 0; i < _max; i++)
             {
-                int c = _current-i-1;
-                if (c <0)
-                    c+=_max;
-                r+=_log[c];
-                r+="\r\n";
+                int c = _current - i - 1;
+                if (c < 0)
+                    c += _max;
+                r += _log[c];
+                r += "\r\n";
             }
             return r;
         }
 
-        private:
-        const int           _max = 200;
-        int                 _current;
+    private:
+        const int _max = 200;
+        int _current;
         std::vector<String> _log;
     };
     enum DataType
@@ -210,6 +209,7 @@ namespace modbus_gateway
         const String _unit;
         const Scaling _scaling;
         const Value _default;
+        const bool _wordorder;
     };
     template <typename MODBUS_TYPE>
     struct BlockDefinition
@@ -230,8 +230,16 @@ namespace modbus_gateway
             switch (_dataType)
             {
             case float32:
-                v.w1 = r[0];
-                v.w2 = r[1];
+                if (_wordorder)
+                {
+                    v.w1 = r[0];
+                    v.w2 = r[1];
+                }
+                else
+                {
+                    v.w2 = r[0];
+                    v.w1 = r[1];
+                }
                 sprintf(buf, "%.1f", v.f32 / getScaling(_scaling));
                 result = buf;
                 break;
@@ -280,8 +288,16 @@ namespace modbus_gateway
             switch (_dataType)
             {
             case float32:
-                v.w1 = r[0];
-                v.w2 = r[1];
+                if (_wordorder)
+                {
+                    v.w1 = r[0];
+                    v.w2 = r[1];
+                }
+                else
+                {
+                    v.w2 = r[0];
+                    v.w1 = r[1];
+                }
                 result = round(float(v.f32) * getScaling(_scaling)) / getScaling(_scaling);
                 break;
             case int16:
@@ -305,7 +321,20 @@ namespace modbus_gateway
             }
             return result;
         }
-
+        int16_t toInt16(const uint16_t *r) const
+        {
+            int16_t result = 0;
+            switch (_dataType)
+            {
+            case int16:
+                result = r[0];
+                break;
+            case uint16:
+                result = r[0];
+                break;
+            }
+            return result;
+        }
         const uint16_t _offset;
         const uint16_t _blockNbr;
         const uint8_t _number;
@@ -314,12 +343,13 @@ namespace modbus_gateway
         const String _unit;
         const Scaling _scaling;
         const Value _default;
+        const bool _wordorder; // True: order is high word, low word. False is the reverse
 
     private:
         template <typename MODBUS_TYPE>
         friend class DeviceDescription;
-        RegisterDescription(uint16_t offset, uint16_t blockNbr, uint8_t number, DataType r_type, String desc, String unit, Scaling scaling, Value d)
-            : _offset(offset), _blockNbr(blockNbr), _number(number), _dataType(r_type), _desc(desc), _unit(unit), _scaling(scaling), _default(d)
+        RegisterDescription(uint16_t offset, uint16_t blockNbr, uint8_t number, DataType r_type, String desc, String unit, Scaling scaling, Value d, bool wordorder)
+            : _offset(offset), _blockNbr(blockNbr), _number(number), _dataType(r_type), _desc(desc), _unit(unit), _scaling(scaling), _default(d), _wordorder(wordorder)
         {
         }
     };
@@ -403,7 +433,7 @@ namespace modbus_gateway
             for (auto i = registers.begin(); i < registers.end(); i++)
             {
                 rr[int32_t(i->_register)] = RegisterReference{i->_desc, blockNbr, i - registers.begin()};
-                RegisterDescription r(r_offset, blockNbr, numberRegisters(i->_dataType), i->_dataType, i->_desc, i->_unit, i->_scaling, i->_default);
+                RegisterDescription r(r_offset, blockNbr, numberRegisters(i->_dataType), i->_dataType, i->_desc, i->_unit, i->_scaling, i->_default, i->_wordorder);
                 rl.push_back(r);
                 number += numberRegisters(i->_dataType);
                 r_offset += numberRegisters(i->_dataType);
@@ -445,10 +475,19 @@ namespace modbus_gateway
         {
             return r.toFloat32(&(_registers[r._offset - _bd._offset])) / getScaling(r._scaling);
         }
+        int16_t getInt16Value(const RegisterDescription &r) const
+        {
+            return r.toInt16(&(_registers[r._offset - _bd._offset])) / getScaling(r._scaling);
+        }
         float getFloatValue(const RegisterReference &rr) const
         {
             const RegisterDescription &r = _bd._rds[rr._register_idx];
             return getFloatValue(r);
+        }
+        int16_t getInt16Value(const RegisterReference &rr) const
+        {
+            const RegisterDescription &r = _bd._rds[rr._register_idx];
+            return getInt16Value(r);
         }
         void setFloatValue(const RegisterReference &rr, float f)
         {
@@ -504,11 +543,11 @@ namespace modbus_gateway
 
     private:
         // Plain uint16_t values access
-        void setRegister(uint32_t block_idx, uint32_t val_index, uint16_t val)
+        void setRegisterValue(uint32_t block_idx, uint32_t val_index, uint16_t val)
         {
             _blocks[block_idx]._registers[val_index] = val;
         }
-        uint16_t getRegister(uint32_t block_idx, uint32_t val_index)
+        uint16_t getRegisterValue(uint32_t block_idx, uint32_t val_index)
         {
             return _blocks[block_idx]._registers[val_index];
         }
@@ -538,6 +577,20 @@ namespace modbus_gateway
                 Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
             }
             return f;
+        }
+        float getInt16Value(RegisterType r)
+        {
+            int16_t i = 0;
+            RegisterReference rr = _dd._rr[r];
+            if (rr._block_idx >= 0 && rr._register_idx >= 0)
+            {
+                i = _blocks[rr._block_idx].getInt16Value(rr);
+            }
+            else
+            {
+                Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
+            }
+            return i;
         }
         void setTransaction(uint32_t block_idx, uint32_t t)
         {
@@ -572,18 +625,18 @@ namespace modbus_gateway
         {
             _s._Mutex.unlock();
         }
-        DataAccess& operator=(const DataAccess&) = delete;
-        DataAccess(const DataAccess&) = delete;
+        DataAccess &operator=(const DataAccess &) = delete;
+        DataAccess(const DataAccess &) = delete;
         DataAccess() = delete;
 
         // Plain uint16_t values access
-        void setRegister(uint32_t block_idx, uint32_t val_index, uint16_t val)
+        void setRegisterValue(uint32_t block_idx, uint32_t val_index, uint16_t val)
         {
-            _s._device.setRegister(block_idx, val_index, val);
+            _s._device.setRegisterValue(block_idx, val_index, val);
         }
-        uint16_t getRegister(uint32_t block_idx, uint32_t val_index)
+        uint16_t getRegisterValue(uint32_t block_idx, uint32_t val_index)
         {
-            return _s._device.getRegister(block_idx, val_index);
+            return _s._device.getRegisterValue(block_idx, val_index);
         }
 
         void setTransaction(uint32_t block_idx, uint32_t t)
@@ -603,6 +656,10 @@ namespace modbus_gateway
         float getFloatValue(RegisterType r)
         {
             return _s._device.getFloatValue(r);
+        }
+        float getInt16Value(RegisterType r)
+        {
+            return _s._device.getInt16Value(r);
         }
 
         String getLog()
