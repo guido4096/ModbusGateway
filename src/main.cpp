@@ -22,9 +22,13 @@
 #include "client.h"
 #include "em24_e1.h"
 #include "wattnode.h"
+#include "optimizer.h"
+#include "alfen.h"
+#include "solaredge.h"
 #include "convert_em24_e1_to_wattnode.h"
 #include "ModbusClientTCP.h"
 #include "ModbusServerRTU.h"
+#include "ModbusServerTCPasync.h"
 #include "RTUutils.h"
 #include "EthernetClient.h"
 #include "WiFiClient.h"
@@ -33,7 +37,9 @@
 static bool eth_connected = false;
 WebServer server(80);
 
-WiFiClient theClient;
+WiFiClient meterClient;
+WiFiClient alfenClient;
+WiFiClient solaredgeClient;
 
 // NTP Server
 const char *ntpServer = "pool.ntp.org";
@@ -59,15 +65,39 @@ IPAddress remote()
     a.fromString(REMOTE);
     return a;
 }
-ModbusClientTCP tcp(theClient, 10);
+ModbusClientTCP tcp(meterClient, 10);
 modbus_gateway::Client<modbus_gateway::EM24_E1> meter(tcp, remote(), TCP_PORT, TCP_SERVER_ID);
 
-// TCP Slave
+// Alfen master
+IPAddress remote_alfen()
+{
+    IPAddress a;
+    a.fromString(REMOTE_ALFEN);
+    return a;
+}
+ModbusClientTCP tcp_alfen(alfenClient, 10);
+modbus_gateway::Client<modbus_gateway::Alfen> alfen(tcp_alfen, remote_alfen(), TCP_ALFEN_PORT, TCP_ALFEN_SERVER_ID);
+
+// SolarEdge master
+IPAddress remote_solaredge()
+{
+    IPAddress a;
+    a.fromString(REMOTE_SOLAREDGE);
+    return a;
+}
+ModbusClientTCP tcp_solaredge(solaredgeClient, 10);
+modbus_gateway::Client<modbus_gateway::SolarEdge> solaredge(tcp_solaredge, remote_solaredge(), TCP_SOLAREDGE_PORT, TCP_SOLAREDGE_SERVER_ID);
+
+// RTU Slave
 ModbusServerRTU rtu(1000);
 modbus_gateway::Server<modbus_gateway::WattNode> wattnode(rtu, RTU_SERVER_ID, SERIAL_NUMBER);
 
+// TCP Optimizer Slave
+ModbusServerTCPasync tcp_server; //(theClient, 10);
+modbus_gateway::Server<modbus_gateway::Optimizer> optimizer(tcp_server, 3, SERIAL_NUMBER);
+
 // Converter mapping
-modbus_gateway::ConvertEM24_E1ToWattNode converter(meter, wattnode);
+modbus_gateway::ConvertEM24_E1ToWattNode converter(meter, wattnode, optimizer, solaredge, alfen);
 
 // How the RS485 port is connected to pins
 #define BOARD_485_TX 33
@@ -78,6 +108,8 @@ modbus_gateway::ConvertEM24_E1ToWattNode converter(meter, wattnode);
 unsigned long prevTime1;
 unsigned long prevTime2;
 unsigned long prevTime3;
+unsigned long prevTime4;
+unsigned long startTime;
 
 void handleRoot()
 {
@@ -85,9 +117,15 @@ void handleRoot()
     <a href=\"info\">Info</a><br/>\
     <a href=\"wattnode\">WattNode values</a><br/>\
     <a href=\"meter\">Meter values</a><br/>\
+    <a href=\"alfen\">Alfen values</a><br/>\
+    <a href=\"solaredge\">SolarEdge values</a><br/>\
+    <a href=\"optimizer\">Optimizer values</a><br/>\
     <a href=\"description\">Description of WattNode and Meter device</a><br/>\
     <a href=\"logmeter\">Log Meter messsages</a><br/>\
     <a href=\"logwattnode\">Log Wattnode messsages</a><br/>\
+    <a href=\"logalfen\">Log Alfen messsages</a><br/>\
+    <a href=\"logsolaredge\">Log SolarEdge messsages</a><br/>\
+    <a href =\"logoptimizer\">Log Optimizer messsages</a><br/>\
     ";
     server.send(200, "text/html", r.c_str());
 }
@@ -114,11 +152,37 @@ void handleWattnode()
     server.send(200, "text/plain", r.c_str());
 }
 
+void handleAlfen()
+{
+    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::Alfen>> a(alfen);
+    String r = a.allValuesAsString();
+    //    String r = "";
+    server.send(200, "text/plain", r.c_str());
+}
+
+void handleSolarEdge()
+{
+    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::SolarEdge>> s(solaredge);
+    String r = s.allValuesAsString();
+    //    String r = "";
+    server.send(200, "text/plain", r.c_str());
+}
+
+void handleOptimizer()
+{
+    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
+    String r = o.allValuesAsString();
+    server.send(200, "text/plain", r.c_str());
+}
+
 void handleDescription()
 {
     String r;
     r += wattnode._device._dd.GetDescriptions();
     r += meter._device._dd.GetDescriptions();
+    r += alfen._device._dd.GetDescriptions();
+    r += solaredge._device._dd.GetDescriptions();
+    r += optimizer._device._dd.GetDescriptions();
     server.send(200, "text/plain", r.c_str());
 }
 
@@ -135,6 +199,32 @@ void handleLogWattnode()
     modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::WattNode>> wn(wattnode);
 
     String r = wn.getLog();
+    server.send(200, "text/plain", r.c_str());
+}
+
+void handleLogAlfen()
+{
+    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::Alfen>> a(alfen);
+    String r = a.getLog();
+    // String r = "";
+
+    server.send(200, "text/plain", r.c_str());
+}
+
+void handleLogSolarEdge()
+{
+    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::SolarEdge>> s(solaredge);
+    String r = s.getLog();
+    // String r = "";
+
+    server.send(200, "text/plain", r.c_str());
+}
+
+void handleLogOptimizer()
+{
+    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
+
+    String r = o.getLog();
     server.send(200, "text/plain", r.c_str());
 }
 
@@ -231,21 +321,34 @@ void setup()
     server.on("/description", handleDescription);
     server.on("/meter", handleMeter);
     server.on("/wattnode", handleWattnode);
+    server.on("/alfen", handleAlfen);
+    server.on("/solaredge", handleSolarEdge);
+    server.on("/optimizer", handleOptimizer);
     server.on("/logmeter", handleLogMeter);
     server.on("/logwattnode", handleLogWattnode);
+    server.on("/logalfen", handleLogAlfen);
+    server.on("/logsolaredge", handleLogSolarEdge);
+    server.on("/logoptimizer", handleLogOptimizer);
     server.onNotFound(handleNotFound);
 
     server.begin();
     Serial.println("HTTP server started");
 
-    tcp.setTimeout(2000, 200);
-    tcp.begin();
-    tcp.setTarget(IPAddress(remote()), 502);
+    // EM24
+    meter.connect();
+
+    // Alfen
+    alfen.connect();
+
+    // SolarEdge
+    solaredge.connect();
 
     // Setup timers to allow tracking elapsed time
     prevTime1 = millis() - 10000; // trigger timers immediately at startup
     prevTime2 = prevTime1;
     prevTime3 = prevTime1;
+    prevTime4 = prevTime1;
+    startTime = millis();
 
     // Start the 485 serial bus
     RTUutils::prepareHardwareSerial(Serial485);
@@ -319,6 +422,14 @@ void loop()
         prevTime3 = currTime;
         jobScheduled = true;
     }
+    if (currTime - prevTime4 >= 500) // Updated every 500 miliseconds
+    {
+        alfen.readBlockFromMeter("dynamic");
+        solaredge.readBlockFromMeter("pv");
+        solaredge.readBlockFromMeter("battery");
+        prevTime4 = currTime;
+        jobScheduled = true;
+    }
 
     // Received data from the meter and it is now stored in the meter object
     // Copy and convert this data to the wattnode object
@@ -327,6 +438,20 @@ void loop()
         converter.CopyDataFromMasterToSlave();
         meter._dataRead = false;
     }
+
+    // Start TCP Slave
+    static bool hasstarted = false;
+    if (!hasstarted && currTime - startTime >= 5000)
+    { // Wait two minutes in case it would cause a crash
+        modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
+        o.logMessage("Starting");
+        bool b = tcp_server.start(504, 4, 100);
+        char buffer[200];
+        sprintf(buffer, "Started: %i", b);
+        o.logMessage(buffer);
+        hasstarted = true;
+    }
+
     if (jobScheduled)
         delay(100);
 }
