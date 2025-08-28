@@ -113,7 +113,7 @@ void modbus_gateway::ConvertEM24_E1ToWattNode::CopyDataFromMasterToSlave()
     // Whatever is left, send it to the battery
     float pv_to_battery = power_pv - pv_to_house - pv_to_alfen; // Always 0 or larger
 
-    int16_t strategy = 1; // 0: normal . 1: surplus to alfen and not to battery. 2: do not use pv for alfen
+    int16_t strategy = 1; // 0: normal . 1: pv surplus to alfen, but no power from battery to alfen. 2: do not use pv for alfen
     float wanted_from_grid = 0;
     if (strategy != 0)
     {
