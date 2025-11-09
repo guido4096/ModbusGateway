@@ -17,7 +17,6 @@
 #include <WiFi.h>
 #include <ArduinoOTA.h>
 
-
 #include "definitions.h"
 #include "server.h"
 #include "client.h"
@@ -37,9 +36,9 @@ WebServer server(80);
 WiFiClient theClient;
 
 // NTP Server
-const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 3600;
-const int   daylightOffset_sec = 3600;
+const char *ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 3600;
+const int daylightOffset_sec = 3600;
 
 // What is the name of the device
 // Passed as MACRO through a build_flag in secrets.ini
@@ -61,7 +60,7 @@ IPAddress remote()
     return a;
 }
 ModbusClientTCP tcp(theClient, 10);
-modbus_gateway::Client<modbus_gateway::EM24_E1> meter(tcp, remote(), TCP_SERVER_ID);
+modbus_gateway::Client<modbus_gateway::EM24_E1> meter(tcp, remote(), TCP_PORT, TCP_SERVER_ID);
 
 // TCP Slave
 ModbusServerRTU rtu(1000);
@@ -198,7 +197,7 @@ void setup()
 
     // Setup the ETHERNET device
     if (!ETH.begin(ETH_ADDR, ETH_PHY_POWER, ETH_MDC_PIN,
-        ETH_MDIO_PIN, ETH_TYPE, ETH_CLK_MODE))
+                   ETH_MDIO_PIN, ETH_TYPE, ETH_CLK_MODE))
     {
         Serial.println("ETH start Failed!");
     }
@@ -211,7 +210,7 @@ void setup()
 
     // Init and get the time
     configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-    
+
     if (MDNS.begin(DEVICENAME))
     {
         Serial.println("MDNS responder started");
@@ -229,11 +228,9 @@ void setup()
     server.begin();
     Serial.println("HTTP server started");
 
-
     tcp.setTimeout(2000, 200);
     tcp.begin();
     tcp.setTarget(IPAddress(remote()), 502);
- 
 
     // Setup timers to allow tracking elapsed time
     prevTime1 = millis() - 10000; // trigger timers immediately at startup
@@ -296,21 +293,21 @@ void loop()
     {
         meter.readBlockFromMeter("dynamic");
         prevTime1 = currTime;
-        jobScheduled= true;
+        jobScheduled = true;
     }
     if (currTime - prevTime2 >= 2000) // Updated every two seconds
     {
         meter.readBlockFromMeter("energy");
         prevTime2 = currTime;
-        jobScheduled= true;
+        jobScheduled = true;
     }
     if (currTime - prevTime3 >= 10000) // This hardly ever changes
-    { 
+    {
 
         meter.readBlockFromMeter("time");
         meter.readBlockFromMeter("tariff");
         prevTime3 = currTime;
-        jobScheduled= true;
+        jobScheduled = true;
     }
 
     // Received data from the meter and it is now stored in the meter object

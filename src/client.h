@@ -20,11 +20,18 @@ namespace modbus_gateway
     public:
         using RegisterType = typename MODBUS_TYPE::e_registers;
 
-        Client(ModbusClientTCP &tcp, const IPAddress &remote, uint16_t tcp_server_id )
-            : _device(MODBUS_TYPE::getDeviceDescription()), _tcp(tcp), _remote(remote), _transaction(0), _tcp_server_id(tcp_server_id)
+        Client(ModbusClientTCP &tcp, const IPAddress &remote, uint16_t tcp_port, uint16_t tcp_server_id)
+            : _device(MODBUS_TYPE::getDeviceDescription()), _tcp(tcp), _remote(remote), _tcp_port(tcp_port), _transaction(0), _tcp_server_id(tcp_server_id)
         {
             _tcp.onDataHandler(&Client::handleData);
             _tcp.onErrorHandler(&Client::handleError);
+        }
+
+        void connect()
+        {
+            _tcp.setTimeout(2000, 200);
+            _tcp.begin();
+            _tcp.setTarget(_remote, _tcp_port);
         }
 
         bool readFromMeter(RegisterType begin, RegisterType end)
@@ -71,7 +78,7 @@ namespace modbus_gateway
             uint32_t blockindex = _device.GetBlockIndex(name);
             if (_device._dd._bds[blockindex]._number_reg > 0)
             {
-              result =  readFromMeter( _device._dd._bds[blockindex]._rds.front(), _device._dd._bds[blockindex]._rds.back());
+                result = readFromMeter(_device._dd._bds[blockindex]._rds.front(), _device._dd._bds[blockindex]._rds.back());
             }
             return result;
         }
@@ -100,7 +107,7 @@ namespace modbus_gateway
             ModbusError me(error);
             T *t = reinterpret_cast<T *>(token);
             char buffer[200];
-            sprintf(buffer,"Error response: %02X - %s - %s - %i - %i", (int)me, (const char *)me, t->_this->_device._dd._bds[t->_blockindex]._name.c_str(), t->_transaction, t->_this->_tcp.pendingRequests());
+            sprintf(buffer, "Error response: %02X - %s - %s - %i - %i", (int)me, (const char *)me, t->_this->_device._dd._bds[t->_blockindex]._name.c_str(), t->_transaction, t->_this->_tcp.pendingRequests());
             Serial.printf("%s\r\n", buffer);
             t->_this->_log.addString(buffer);
             delete t;
@@ -120,11 +127,11 @@ namespace modbus_gateway
             if (t->_blockindex >= 0)
             {
                 // Serial.printf("Response: serverID=%d, FC=%d, Token=%08X, length=%d, values=%i\r\n", response.getServerID(), response.getFunctionCode(), token, (response.size()-3), (values._values.size()*2) );
-                if ((t->_nbr_reg*2) == (response.size() - 3))
+                if ((t->_nbr_reg * 2) == (response.size() - 3))
                 {
                     auto i = response.begin();
                     i += 3;
-                    int index = 0+(t->_start_reg - t->_this->_device._dd._bds[t->_blockindex]._offset);
+                    int index = 0 + (t->_start_reg - t->_this->_device._dd._bds[t->_blockindex]._offset);
 
                     while (i < response.end())
                     {
@@ -136,9 +143,10 @@ namespace modbus_gateway
                     t->_this->_dataRead = true;
                     dataaccess.setTransaction(t->_blockindex, t->_transaction);
                 }
-                else {
+                else
+                {
                     char buffer[200];
-                    sprintf(buffer,"Expected bytes: %i, received bytes: %i", t->_nbr_reg*2, response.size() - 3);
+                    sprintf(buffer, "Expected bytes: %i, received bytes: %i", t->_nbr_reg * 2, response.size() - 3);
                     Serial.printf("%s\r\n", buffer);
                     t->_this->_log.addString(buffer);
                 }
@@ -154,6 +162,7 @@ namespace modbus_gateway
         uint32_t _transaction;
         ModbusClientTCP &_tcp;
         IPAddress _remote;
+        uint16_t _tcp_port;
         uint16_t _tcp_server_id;
         mutable std::timed_mutex _Mutex;
     };
