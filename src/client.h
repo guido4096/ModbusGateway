@@ -131,7 +131,7 @@ namespace modbus_gateway
                         Value v;
                         v.b2 = *i++;
                         v.b1 = *i++;
-                        dataaccess.setRegister(t->_blockindex, index++, v.w);
+                        dataaccess.setRegisterValue(t->_blockindex, index++, v.w);
                     }
                     t->_this->_dataRead = true;
                     dataaccess.setTransaction(t->_blockindex, t->_transaction);

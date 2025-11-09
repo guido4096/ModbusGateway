@@ -335,6 +335,27 @@ namespace modbus_gateway
             }
             return result;
         }
+        int32_t toInt32(const uint16_t *r) const
+        {
+            Value v;
+            v.i32 = 0;
+            switch (_dataType)
+            {
+            case int32:
+                if (_wordorder)
+                {
+                    v.w1 = r[0];
+                    v.w2 = r[1];
+                }
+                else
+                {
+                    v.w1 = r[1];
+                    v.w2 = r[0];
+                }
+                break;
+            }
+            return v.i32;
+        }
         const uint16_t _offset;
         const uint16_t _blockNbr;
         const uint8_t _number;
@@ -479,6 +500,10 @@ namespace modbus_gateway
         {
             return r.toInt16(&(_registers[r._offset - _bd._offset])) / getScaling(r._scaling);
         }
+        int32_t getInt32Value(const RegisterDescription &r) const
+        {
+            return r.toInt32(&(_registers[r._offset - _bd._offset])) / getScaling(r._scaling);
+        }
         float getFloatValue(const RegisterReference &rr) const
         {
             const RegisterDescription &r = _bd._rds[rr._register_idx];
@@ -489,12 +514,32 @@ namespace modbus_gateway
             const RegisterDescription &r = _bd._rds[rr._register_idx];
             return getInt16Value(r);
         }
+        int32_t getInt32Value(const RegisterReference &rr) const
+        {
+            const RegisterDescription &r = _bd._rds[rr._register_idx];
+            return getInt32Value(r);
+        }
         void setFloatValue(const RegisterReference &rr, float f)
         {
             const RegisterDescription &r = _bd._rds[rr._register_idx];
             Value v = Value::_float32_t(f);
             _registers[r._offset - _bd._offset] = v.w1;
             _registers[r._offset - _bd._offset + 1] = v.w2;
+        }
+        void setInt32Value(const RegisterReference &rr, int32_t f)
+        {
+            const RegisterDescription &r = _bd._rds[rr._register_idx];
+            Value v = Value::_int32_t(f);
+            if (r._wordorder)
+            {
+                _registers[r._offset - _bd._offset] = v.w1;
+                _registers[r._offset - _bd._offset + 1] = v.w2;
+            }
+            else
+            {
+                _registers[r._offset - _bd._offset] = v.w2;
+                _registers[r._offset - _bd._offset + 1] = v.w1;
+            }
         }
         template <typename T>
         friend class Device;
@@ -592,6 +637,33 @@ namespace modbus_gateway
             }
             return i;
         }
+
+        uint32_t getInt32Value(RegisterType r)
+        {
+            uint32_t i = 0;
+            RegisterReference rr = _dd._rr[r];
+            if (rr._block_idx >= 0 && rr._register_idx >= 0)
+            {
+                i = _blocks[rr._block_idx].getInt32Value(rr);
+            }
+            else
+            {
+                Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
+            }
+            return i;
+        }
+        void setInt32Value(RegisterType r, uint32_t i)
+        {
+            RegisterReference rr = _dd._rr[r];
+            if (rr._block_idx >= 0 && rr._register_idx >= 0)
+            {
+                _blocks[rr._block_idx].setInt32Value(rr, i);
+            }
+            else
+            {
+                Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
+            }
+        }
         void setTransaction(uint32_t block_idx, uint32_t t)
         {
             _blocks[block_idx]._transaction - t;
@@ -661,7 +733,14 @@ namespace modbus_gateway
         {
             return _s._device.getInt16Value(r);
         }
-
+        void setInt32Value(RegisterType r, int32_t i)
+        {
+            _s._device.setInt32Value(r, i);
+        }
+        int32_t getInt32Value(RegisterType r)
+        {
+            return _s._device.getInt32Value(r);
+        }
         String getLog()
         {
             return _s._log.allValuesAsString();
