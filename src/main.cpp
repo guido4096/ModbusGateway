@@ -33,6 +33,7 @@
 #include "EthernetClient.h"
 #include "WiFiClient.h"
 #include "time.h"
+#include "Preferences.h"
 
 static bool eth_connected = false;
 WebServer server(80);
@@ -40,6 +41,9 @@ WebServer server(80);
 WiFiClient meterClient;
 WiFiClient alfenClient;
 WiFiClient solaredgeClient;
+
+// Preferences
+Preferences preferences;
 
 // NTP Server
 const char *ntpServer = "pool.ntp.org";
@@ -126,6 +130,9 @@ void handleRoot()
     <a href=\"logalfen\">Log Alfen messsages</a><br/>\
     <a href=\"logsolaredge\">Log SolarEdge messsages</a><br/>\
     <a href =\"logoptimizer\">Log Optimizer messsages</a><br/>\
+    <a href =\"optimizer0\">Optimizer 0</a><br/>\
+    <a href =\"optimizer1\">Optimizer 1</a><br/>\
+    <a href =\"optimizer2\">Optimizer 2</a><br/>\
     ";
     server.send(200, "text/html", r.c_str());
 }
@@ -171,6 +178,31 @@ void handleSolarEdge()
 void handleOptimizer()
 {
     modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
+    String r = o.allValuesAsString();
+    server.send(200, "text/plain", r.c_str());
+}
+
+void handleOptimizer0()
+{
+    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
+    o.setInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy, 0);
+    preferences.putInt("opt_strat", 0);
+    String r = o.allValuesAsString();
+    server.send(200, "text/plain", r.c_str());
+}
+void handleOptimizer1()
+{
+    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
+    o.setInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy, 1);
+    preferences.putInt("opt_strat", 1);
+    String r = o.allValuesAsString();
+    server.send(200, "text/plain", r.c_str());
+}
+void handleOptimizer2()
+{
+    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
+    o.setInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy, 2);
+    preferences.putInt("opt_strat", 2);
     String r = o.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
@@ -286,6 +318,10 @@ void WiFiEvent(arduino_event_id_t event)
 
 void setup()
 {
+
+    // begin preferences
+    preferences.begin("modbusgateway", false);
+
     Serial.begin(115200);
     WiFi.onEvent(WiFiEvent);
 
@@ -329,6 +365,9 @@ void setup()
     server.on("/logalfen", handleLogAlfen);
     server.on("/logsolaredge", handleLogSolarEdge);
     server.on("/logoptimizer", handleLogOptimizer);
+    server.on("/optimizer0", handleOptimizer0);
+    server.on("/optimizer1", handleOptimizer1);
+    server.on("/optimizer2", handleOptimizer2);
     server.onNotFound(handleNotFound);
 
     server.begin();
@@ -342,6 +381,15 @@ void setup()
 
     // SolarEdge
     solaredge.connect();
+
+    // Start TCP Slave
+    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
+    bool b = tcp_server.start(504, 4, 100);
+    char buffer[200];
+    sprintf(buffer, "Started: %i", b);
+    o.logMessage(buffer);
+    int32_t optStrat = preferences.getInt("opt_strat", 0);
+    o.setInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy, optStrat);
 
     // Setup timers to allow tracking elapsed time
     prevTime1 = millis() - 10000; // trigger timers immediately at startup
@@ -424,9 +472,19 @@ void loop()
     }
     if (currTime - prevTime4 >= 500) // Updated every 500 miliseconds
     {
+        int optStrategy = 0;
+        { // Keep scope as small as possible
+            modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
+            optStrategy = o.getInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy);
+        }
+        if (optStrategy == 1) // Solaredge values are only needed for OptStrategy == 1
+        {
+            solaredge.readBlockFromMeter("overview");
+            solaredge.readBlockFromMeter("pv");
+            solaredge.readBlockFromMeter("battery");
+        }
         alfen.readBlockFromMeter("dynamic");
-        solaredge.readBlockFromMeter("pv");
-        solaredge.readBlockFromMeter("battery");
+
         prevTime4 = currTime;
         jobScheduled = true;
     }
@@ -437,19 +495,6 @@ void loop()
     {
         converter.CopyDataFromMasterToSlave();
         meter._dataRead = false;
-    }
-
-    // Start TCP Slave
-    static bool hasstarted = false;
-    if (!hasstarted && currTime - startTime >= 5000)
-    { // Wait two minutes in case it would cause a crash
-        modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
-        o.logMessage("Starting");
-        bool b = tcp_server.start(504, 4, 100);
-        char buffer[200];
-        sprintf(buffer, "Started: %i", b);
-        o.logMessage(buffer);
-        hasstarted = true;
     }
 
     if (jobScheduled)

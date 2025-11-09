@@ -21,7 +21,7 @@ namespace modbus_gateway
         // All defined registers. See the definition of each register in the .cpp file
         enum e_registers
         {
-            requested_power_from_inverter,
+            optimizer_strategy,
             last
         };
     };

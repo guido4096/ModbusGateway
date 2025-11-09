@@ -14,20 +14,27 @@
 // https://knowledge-center.solaredge.com/sites/kc/files/sunspec-implementation-technical-note.pdf
 const modbus_gateway::DeviceDescription<modbus_gateway::SolarEdge> &modbus_gateway::SolarEdge::getDeviceDescription()
 {
-    static DeviceDescription<SolarEdge> dd =
-        DeviceDescription<SolarEdge>::makeDD("solaredge",
-                                             {{"pv", 40083, {
+  static DeviceDescription<SolarEdge> dd =
+      DeviceDescription<SolarEdge>::makeDD("solaredge",
+                                           {{"pv", 40083, {
 
-                                                                {se_power, DataType::int16, "SE Power", "W", Scaling::none, Value::_int16_t(0), true},
-                                                                {se_power_sf, DataType::int16, "SE Power SF", "", Scaling::none, Value::_int16_t(0), true},
-                                                            }},
-                                              {"battery", 57716, {
+                                                              {ac_power, DataType::int16, "AC Power", "W", Scaling::none, Value::_int16_t(0), true},
+                                                              {ac_power_sf, DataType::int16, "AC Power SF", "", Scaling::none, Value::_int16_t(0), true},
+                                                          }},
+                                            {"battery", 57716, {
 
-                                                                     {b1_instantaneous_power, DataType::float32, "Battery 1 Instantaneous Power", "W", Scaling::none, Value::_float32_t(0), true},
-                                                                 }}}
+                                                                   {b1_instantaneous_power, DataType::float32, "Battery 1 Instantaneous Power", "W", Scaling::none, Value::_float32_t(0), true},
+                                                               }},
+                                            {"dc", 40100, {
 
-        );
-    return dd;
+                                                              {dc_power, DataType::int16, "DC Power", "W", Scaling::none, Value::_int16_t(0), true},
+                                                              {dc_power_sf, DataType::int16, "DC Power SF", "", Scaling::none, Value::_int16_t(0), true},
+                                                          }}
+
+                                           }
+
+      );
+  return dd;
 }
 /*
 ~ 4Kw pv, which is used to charge the battery

@@ -21,9 +21,11 @@ namespace modbus_gateway
         // All defined registers. See the definition of each register in the .cpp file
         enum e_registers
         {
-            se_power,
-            se_power_sf,
+            ac_power,
+            ac_power_sf,
             b1_instantaneous_power,
+            dc_power,
+            dc_power_sf,
             last
         };
     };

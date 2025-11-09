@@ -25,7 +25,6 @@ void modbus_gateway::ConvertEM24_E1ToWattNode::CopyDataFromMasterToSlave()
     wattnode.setFloatValue(WattNode::energy_active_nr, meter.getFloatValue(EM24_E1::import_energy_active) + meter.getFloatValue(EM24_E1::export_energy_active)); //  # total active energy non-reset
     wattnode.setFloatValue(WattNode::import_energy_active_nr, meter.getFloatValue(EM24_E1::import_energy_active));                                               //  # imported active energy non-reset
     wattnode.setFloatValue(WattNode::power_active, meter.getFloatValue(EM24_E1::power_active));                                                                  //  # total power
-    // wattnode.setFloatValue(WattNode::power_active, optimizer.getFloatValue(Optimizer::requested_power_from_inverter)); //  # total power
     wattnode.setFloatValue(WattNode::l1_power_active, meter.getFloatValue(EM24_E1::l1_power_active));
     wattnode.setFloatValue(WattNode::l2_power_active, meter.getFloatValue(EM24_E1::l2_power_active));
     wattnode.setFloatValue(WattNode::l3_power_active, meter.getFloatValue(EM24_E1::l3_power_active));
@@ -82,43 +81,46 @@ void modbus_gateway::ConvertEM24_E1ToWattNode::CopyDataFromMasterToSlave()
     // wattnode.setFloatValue(WattNode::l2_demand_power_active, meter.getFloatValue(EM24_E1::l2_demand_power_active)); //  demand power l2
     // wattnode.setFloatValue(WattNode::l3_demand_power_active, meter.getFloatValue(EM24_E1::l3_demand_power_active)); //  demand power l3
 
-    // alfen=0.0 solar=1724.6 battery=1313.0 net=2559.7
-    // solar positive = solar production
-    // battery positive = charging battery
-    // net positive = using from grid
+    int32_t strategy = 0; // 0: normal . 1: pv surplus to alfen, but no power from battery to alfen. 2: do not use pv for alfen
+    // In general, the car needs soo much energy that it could absorb almost all solar energy
+    // In that case, the benefits of the battery are mainly for peakshaving, which requires having enough energy in battery to support peaks
+    // Assumption is that the house peak is handled through the battery with minor assistance from the grid, with a grid peak below 2.5 kw
+    // At night, when the house is mostly at rest, it would be nice to charge the car with a constant 2.5 kw from the grid
+    strategy = optimizer.getInt32Value(Optimizer::optimizer_strategy); //  # total power
 
-    // Special: optimize value
-    int16_t v_se_power_to_ac = solaredge.getInt16Value(SolarEdge::se_power);
-    int16_t v_se_power_to_ac_sf = solaredge.getInt16Value(SolarEdge::se_power_sf);
-    float power_to_ac_se = v_se_power_to_ac * pow(10, v_se_power_to_ac_sf); // total power, pv+battery combined, to AC
-    float power_alfen = alfen.getFloatValue(Alfen::real_power_sum);
-    float power_battery = solaredge.getFloatValue(SolarEdge::b1_instantaneous_power);
-    float power_net = meter.getFloatValue(EM24_E1::power_active);
-    float power_pv = power_to_ac_se + power_battery;
-    // correct for negative values
-    if (power_pv < 0)
-    {
-        power_battery = power_battery - power_pv;
-        power_pv = 0;
-    }
-
-    float power_house = std::max(float(0), power_net + power_to_ac_se - power_alfen); // house is always 0 or larger
-
-    // Whatever the house uses, take that from PV
-    float pv_to_house = std::min(power_pv, power_house);
-
-    // Whatever is left from pv, send that to charging station
-    float pv_to_alfen = std::max(float(0), std::min(power_alfen, power_pv - pv_to_house));
-
-    // Whatever is left, send it to the battery
-    float pv_to_battery = power_pv - pv_to_house - pv_to_alfen; // Always 0 or larger
-
-    int16_t strategy = 1; // 0: normal . 1: pv surplus to alfen, but no power from battery to alfen. 2: do not use pv for alfen
     float wanted_from_grid = 0;
     if (strategy != 0)
     {
+        // Special: optimize value
+
+        float power_alfen = alfen.getFloatValue(Alfen::real_power_sum);
+        float power_net = meter.getFloatValue(EM24_E1::power_active);
+
         if (strategy == 1)
         {
+            int16_t v_se_power_to_ac = solaredge.getInt16Value(SolarEdge::ac_power);
+            int16_t v_se_power_to_ac_sf = solaredge.getInt16Value(SolarEdge::ac_power_sf);
+            float power_battery = solaredge.getFloatValue(SolarEdge::b1_instantaneous_power);
+
+            float power_to_ac_se = v_se_power_to_ac * pow(10, v_se_power_to_ac_sf); // total power, pv+battery combined, to AC
+            float power_pv = power_to_ac_se + power_battery;
+            // correct for negative values
+            if (power_pv < 0)
+            {
+                power_battery = power_battery - power_pv;
+                power_pv = 0;
+            }
+            float power_house = std::max(float(0), power_net + power_to_ac_se - power_alfen); // house is always 0 or larger
+
+            // Whatever the house uses, take that from PV
+            float pv_to_house = std::min(power_pv, power_house);
+
+            // Whatever is left from pv, send that to charging station
+            float pv_to_alfen = std::max(float(0), std::min(power_alfen, power_pv - pv_to_house));
+
+            // Whatever is left, send it to the battery
+            float pv_to_battery = power_pv - pv_to_house - pv_to_alfen; // Always 0 or larger
+
             // How much should we consume from the grid? We only want the power from the alfen that is not covered by pv to be used from the net
             wanted_from_grid = power_alfen - pv_to_alfen;
         }
@@ -133,10 +135,10 @@ void modbus_gateway::ConvertEM24_E1ToWattNode::CopyDataFromMasterToSlave()
         wattnode.setFloatValue(WattNode::l1_power_active, meter.getFloatValue(EM24_E1::l1_power_active) - wanted_from_grid / 3);
         wattnode.setFloatValue(WattNode::l2_power_active, meter.getFloatValue(EM24_E1::l2_power_active) - wanted_from_grid / 3);
         wattnode.setFloatValue(WattNode::l3_power_active, meter.getFloatValue(EM24_E1::l3_power_active) - wanted_from_grid / 3);
+        // Log message
+        char buffer[400];
+        sprintf(buffer, "s=%i, cn=%.1f wanted_from_grid=%.1f power_alfen=%.1f power_net=%.1f",
+                strategy, power_net - wanted_from_grid, wanted_from_grid, power_alfen, power_net);
+        optimizer.logMessage(buffer);
     }
-    // Log message
-    char buffer[400];
-    sprintf(buffer, "cn=%.1f wanted_from_grid=%.1f  power_pv=%.1f power_alfen=%.1f power_to_ac_se=%.1f power_battery=%.1f power_net=%.1f power_house=%.1f pv_to_house=%.1f pv_to_alfen=%.1f pv_to_battery=%.1f",
-            power_net - wanted_from_grid, wanted_from_grid, power_pv, power_alfen, power_to_ac_se, power_battery, power_net, power_house, pv_to_house, pv_to_alfen, pv_to_battery);
-    optimizer.logMessage(buffer);
 }
