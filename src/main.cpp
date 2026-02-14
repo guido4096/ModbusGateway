@@ -82,6 +82,7 @@ unsigned long prevTime3;
 void handleRoot()
 {
     String r = "\
+    <a href=\"info\">Info</a><br/>\
     <a href=\"wattnode\">WattNode values</a><br/>\
     <a href=\"meter\">Meter values</a><br/>\
     <a href=\"description\">Description of WattNode and Meter device</a><br/>\
@@ -89,6 +90,14 @@ void handleRoot()
     <a href=\"logwattnode\">Log Wattnode messsages</a><br/>\
     ";
     server.send(200, "text/html", r.c_str());
+}
+
+void handleInfo()
+{
+    String r = "ESP-IDF version is: " + String(esp_get_idf_version()) + "\r\n";
+    r += String("FlashSize = ") + String(ESP.getFlashChipSize()) + " bytes\r\n";
+
+    server.send(200, "text/plain", r.c_str());
 }
 
 void handleMeter()
@@ -218,6 +227,7 @@ void setup()
 
     // Setup HTTP server
     server.on("/", handleRoot);
+    server.on("/info", handleInfo);
     server.on("/description", handleDescription);
     server.on("/meter", handleMeter);
     server.on("/wattnode", handleWattnode);
