@@ -29,7 +29,7 @@ namespace modbus_gateway
             getLocalTime(&timeinfo);
             char buffer[100] = "";
             sprintf(buffer, "%04u-%02u-%02u %u:%02u:%02u: ",
-                    1900 + timeinfo.tm_year, timeinfo.tm_mon, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+                    1900 + timeinfo.tm_year, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
             v = buffer;
             v += s;
             _log[_current++] = v;

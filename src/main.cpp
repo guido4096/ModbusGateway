@@ -479,7 +479,7 @@ void loop()
         }
         if (optStrategy == 1) // Solaredge values are only needed for OptStrategy == 1
         {
-            solaredge.readBlockFromMeter("overview");
+            solaredge.readBlockFromMeter("dc");
             solaredge.readBlockFromMeter("pv");
             solaredge.readBlockFromMeter("battery");
         }
