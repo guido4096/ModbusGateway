@@ -187,7 +187,7 @@ void handleOptimizer0()
     modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
     o.setInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy, 0);
     preferences.putInt("opt_strat", 0);
-    String r = o.allValuesAsString();
+    String r = "OK\n" + o.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
 void handleOptimizer1()
@@ -195,7 +195,7 @@ void handleOptimizer1()
     modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
     o.setInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy, 1);
     preferences.putInt("opt_strat", 1);
-    String r = o.allValuesAsString();
+    String r = "OK\n" + o.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
 void handleOptimizer2()
@@ -203,7 +203,7 @@ void handleOptimizer2()
     modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
     o.setInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy, 2);
     preferences.putInt("opt_strat", 2);
-    String r = o.allValuesAsString();
+    String r = "OK\n" + o.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
 
@@ -216,6 +216,14 @@ void handleDescription()
     r += solaredge._device._dd.GetDescriptions();
     r += optimizer._device._dd.GetDescriptions();
     server.send(200, "text/plain", r.c_str());
+}
+
+void handleStatus()
+{
+    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
+    uint32_t optimizer_status = o.getInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy);
+    String r = "{\"circuit\": " + String(optimizer_status) + " }";
+    server.send(200, "application/json", r.c_str());
 }
 
 void handleLogMeter()
@@ -368,6 +376,7 @@ void setup()
     server.on("/optimizer0", handleOptimizer0);
     server.on("/optimizer1", handleOptimizer1);
     server.on("/optimizer2", handleOptimizer2);
+    server.on("/status", handleStatus);
     server.onNotFound(handleNotFound);
 
     server.begin();
