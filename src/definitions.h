@@ -480,14 +480,14 @@ namespace modbus_gateway
 
             // Transaction id
             sprintf(buf, "TransactionID=%i\r\n", _transaction);
-            result = result += buf;
+            result += buf;
             sprintf(buf, "Block %s\r\n", _bd._name.c_str());
-            result = result += buf;
+            result += buf;
 
             for (auto i = _bd._rds.begin(); i < _bd._rds.end(); i++)
             {
                 String value = i->toString(&(_registers[i->_offset - _bd._offset]));
-                sprintf(buf, "  %s=%s %s\n", i->_desc.c_str(), value.c_str(), i->_unit);
+                sprintf(buf, "  %s=%s %s\n", i->_desc.c_str(), value.c_str(), i->_unit.c_str());
                 result += buf;
             }
             return result;
@@ -611,46 +611,34 @@ namespace modbus_gateway
         }
         float getFloatValue(RegisterType r)
         {
-            float f = 0;
             RegisterReference rr = _dd._rr[r];
             if (rr._block_idx >= 0 && rr._register_idx >= 0)
             {
-                f = _blocks[rr._block_idx].getFloatValue(rr);
+                return _blocks[rr._block_idx].getFloatValue(rr);
             }
-            else
-            {
-                Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
-            }
-            return f;
+            reportInvalidReference(rr);
+            return 0;
         }
         float getInt16Value(RegisterType r)
         {
-            int16_t i = 0;
             RegisterReference rr = _dd._rr[r];
             if (rr._block_idx >= 0 && rr._register_idx >= 0)
             {
-                i = _blocks[rr._block_idx].getInt16Value(rr);
+                return _blocks[rr._block_idx].getInt16Value(rr);
             }
-            else
-            {
-                Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
-            }
-            return i;
+            reportInvalidReference(rr);
+            return 0;
         }
 
         uint32_t getInt32Value(RegisterType r)
         {
-            uint32_t i = 0;
             RegisterReference rr = _dd._rr[r];
             if (rr._block_idx >= 0 && rr._register_idx >= 0)
             {
-                i = _blocks[rr._block_idx].getInt32Value(rr);
+                return _blocks[rr._block_idx].getInt32Value(rr);
             }
-            else
-            {
-                Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
-            }
-            return i;
+            reportInvalidReference(rr);
+            return 0;
         }
         void setInt32Value(RegisterType r, uint32_t i)
         {
@@ -661,13 +649,20 @@ namespace modbus_gateway
             }
             else
             {
-                Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
+                reportInvalidReference(rr);
             }
         }
         void setTransaction(uint32_t block_idx, uint32_t t)
         {
-            _blocks[block_idx]._transaction - t;
+            _blocks[block_idx]._transaction = t;
         }
+
+        // Shared error message for when a register has no valid block/index mapping
+        void reportInvalidReference(const RegisterReference &rr) const
+        {
+            Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
+        }
+
         String allValuesAsString() const
         {
             String r = "";

@@ -1,5 +1,5 @@
 /**
- * @file      master.h
+ * @file      client.h
  * @author    Guido Jansen (guido@ngjansen.be)
  * @license   MIT
  * @copyright Copyright (c) 2025 Guido Jansen
@@ -106,8 +106,11 @@ namespace modbus_gateway
             // ModbusError wraps the error code and provides a readable error message for it
             ModbusError me(error);
             T *t = reinterpret_cast<T *>(token);
+            const char *block_name = t->_this->_device._dd._bds[t->_blockindex]._name.c_str();
+
             char buffer[200];
-            sprintf(buffer, "Error response: %02X - %s - %s - %i - %i", (int)me, (const char *)me, t->_this->_device._dd._bds[t->_blockindex]._name.c_str(), t->_transaction, t->_this->_tcp.pendingRequests());
+            sprintf(buffer, "Error response: %02X - %s - %s - %i - %i",
+                    (int)me, (const char *)me, block_name, t->_transaction, t->_this->_tcp.pendingRequests());
             Serial.printf("%s\r\n", buffer);
             t->_this->_log.addString(buffer);
             delete t;
@@ -121,20 +124,25 @@ namespace modbus_gateway
                 return;
             }
             T *t = reinterpret_cast<T *>(token);
-            // Serial.printf("handleData: serverID=%d, FC=%d, Token=%08X\r\n", response.getServerID(), response.getFunctionCode(), token);
+
+            // Bytes before the register payload: serverID, function code and byte count
+            static const uint16_t RESPONSE_DATA_OFFSET = 3;
 
             DataAccess<Client<MODBUS_TYPE>> dataaccess(*t->_this);
             if (t->_blockindex >= 0)
             {
-                // Serial.printf("Response: serverID=%d, FC=%d, Token=%08X, length=%d, values=%i\r\n", response.getServerID(), response.getFunctionCode(), token, (response.size()-3), (values._values.size()*2) );
-                if ((t->_nbr_reg * 2) == (response.size() - 3))
+                const BlockDescription &block = t->_this->_device._dd._bds[t->_blockindex];
+                uint16_t received_bytes = response.size() - RESPONSE_DATA_OFFSET;
+
+                if ((t->_nbr_reg * 2) == received_bytes)
                 {
-                    auto i = response.begin();
-                    i += 3;
-                    int index = 0 + (t->_start_reg - t->_this->_device._dd._bds[t->_blockindex]._offset);
+                    auto i = response.begin() + RESPONSE_DATA_OFFSET;
+                    // Register index within the block where the response data starts
+                    int index = t->_start_reg - block._offset;
 
                     while (i < response.end())
                     {
+                        // Modbus sends each register big-endian; assemble the two bytes
                         Value v;
                         v.b2 = *i++;
                         v.b1 = *i++;
@@ -146,7 +154,7 @@ namespace modbus_gateway
                 else
                 {
                     char buffer[200];
-                    sprintf(buffer, "Expected bytes: %i, received bytes: %i", t->_nbr_reg * 2, response.size() - 3);
+                    sprintf(buffer, "Expected bytes: %i, received bytes: %i", t->_nbr_reg * 2, received_bytes);
                     Serial.printf("%s\r\n", buffer);
                     t->_this->_log.addString(buffer);
                 }

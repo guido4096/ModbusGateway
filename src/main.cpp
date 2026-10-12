@@ -115,6 +115,12 @@ unsigned long prevTime3;
 unsigned long prevTime4;
 unsigned long startTime;
 
+// Poll intervals for the meter and the optional optimizer inputs (milliseconds)
+static const unsigned long INTERVAL_DYNAMIC = 300;   // instantaneous meter values (power, voltage, current)
+static const unsigned long INTERVAL_ENERGY = 2000;   // energy counters
+static const unsigned long INTERVAL_SLOW = 10000;    // time and tariff registers (hardly ever change)
+static const unsigned long INTERVAL_OPTIMIZER = 500; // Alfen and (when needed) SolarEdge values
+
 void handleRoot()
 {
     String r = "\
@@ -459,34 +465,33 @@ void loop()
     // use elapsed time to know when to add a new job
     unsigned long currTime = millis();
     bool jobScheduled = false;
-    if (currTime - prevTime1 >= 300) // Instantaneous variables, update regularly
+    if (currTime - prevTime1 >= INTERVAL_DYNAMIC)
     {
         meter.readBlockFromMeter("dynamic");
         prevTime1 = currTime;
         jobScheduled = true;
     }
-    if (currTime - prevTime2 >= 2000) // Updated every two seconds
+    if (currTime - prevTime2 >= INTERVAL_ENERGY)
     {
         meter.readBlockFromMeter("energy");
         prevTime2 = currTime;
         jobScheduled = true;
     }
-    if (currTime - prevTime3 >= 10000) // This hardly ever changes
+    if (currTime - prevTime3 >= INTERVAL_SLOW)
     {
-
         meter.readBlockFromMeter("time");
         meter.readBlockFromMeter("tariff");
         prevTime3 = currTime;
         jobScheduled = true;
     }
-    if (currTime - prevTime4 >= 500) // Updated every 500 miliseconds
+    if (currTime - prevTime4 >= INTERVAL_OPTIMIZER)
     {
         int optStrategy = 0;
         { // Keep scope as small as possible
             modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
             optStrategy = o.getInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy);
         }
-        if (optStrategy == 1) // Solaredge values are only needed for OptStrategy == 1
+        if (optStrategy == 1) // SolarEdge values are only needed for optimizer strategy 1
         {
             solaredge.readBlockFromMeter("dc");
             solaredge.readBlockFromMeter("pv");

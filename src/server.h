@@ -1,5 +1,5 @@
 /**
- * @file      slave.h
+ * @file      server.h
  * @author    Guido Jansen (guido@ngjansen.be)
  * @license   MIT
  * @copyright Copyright (c) 2025 Guido Jansen
@@ -43,6 +43,11 @@ namespace modbus_gateway
         {
             return Process(request, READ_HOLD_REGISTER);
         }
+        // Byte offset of the register data inside a Modbus PDU: the first two
+        // bytes are the function code and the register address, the next two are
+        // the register count. Only used to decode write requests (FC06/FC16).
+        static const uint16_t REQUEST_DATA_OFFSET = 7;
+
         static ModbusMessage Process(ModbusMessage request, FunctionCode fc)
         {
             uint16_t address;       // requested register address
@@ -52,30 +57,35 @@ namespace modbus_gateway
             // get request values
             request.get(2, address);
             request.get(4, words);
-            // Serial.printf("FC03 address:%i words:%i\r\n", address, words);
-            DataAccess<Server<MODBUS_TYPE>> dataaccess(*_THIS);
+
+            Server<MODBUS_TYPE> *self = _THIS; // static worker has no instance pointer
+            DataAccess<Server<MODBUS_TYPE>> dataaccess(*self);
 
             if (fc == WRITE_MULT_REGISTERS || fc == WRITE_HOLD_REGISTER)
             {
-                uint16_t i = 0;
+                // Log the raw request bytes to make protocol debugging easier
                 char hexstr[200];
+                uint16_t i = 0;
                 for (i = 0; i < request.size() && i < 200 / 3; i++)
                 {
                     uint8_t b = request.data()[i];
                     sprintf(hexstr + i * 3, "%02x ", b);
                 }
                 hexstr[i * 3] = 0;
+
                 char buffer[200];
                 sprintf(buffer, "Writing: serverID=%d, FC=%d, start=%d, length=%d, size=%d, b=%s", request.getServerID(), request.getFunctionCode(), address, words, request.size(), hexstr);
                 dataaccess.logMessage(buffer);
             }
-            // Find the block
+
+            // Find the block that fully covers the requested address range
+            const auto &blocks = self->_device._dd._bds;
             int32_t block_index = -1;
-            for (auto i = _THIS->_device._dd._bds.begin(); i < _THIS->_device._dd._bds.end(); i++)
+            for (auto block = blocks.begin(); block < blocks.end(); block++)
             {
-                if (i->_offset <= address && (i->_offset + i->_number_reg) >= (address + words))
+                if (block->_offset <= address && (block->_offset + block->_number_reg) >= (address + words))
                 {
-                    block_index = i - _THIS->_device._dd._bds.begin();
+                    block_index = block - blocks.begin();
                     break;
                 }
             }
@@ -83,6 +93,8 @@ namespace modbus_gateway
             // Did we find the block?
             if (block_index >= 0)
             {
+                const uint16_t block_offset = blocks[block_index]._offset;
+
                 if (fc == READ_HOLD_REGISTER)
                 {
                     // Looks okay. Set up message with serverID, FC and length of data
@@ -90,12 +102,11 @@ namespace modbus_gateway
                     // Fill response with requested data
                     for (uint16_t i = address; i < address + words; ++i)
                     {
-                        uint16_t v = dataaccess.getRegisterValue(block_index, i - _THIS->_device._dd._bds[block_index]._offset);
+                        uint16_t v = dataaccess.getRegisterValue(block_index, i - block_offset);
                         response.add(v);
                     }
                     char buffer[200];
-                    sprintf(buffer, "Response: serverID=%d, FC=%d, start=%d length=%d block=%s", response.getServerID(), response.getFunctionCode(), address, words, _THIS->_device._dd._bds[block_index]._name.c_str());
-                    // Serial.printf("%s\r\n", buffer);
+                    sprintf(buffer, "Response: serverID=%d, FC=%d, start=%d length=%d block=%s", response.getServerID(), response.getFunctionCode(), address, words, blocks[block_index]._name.c_str());
                     dataaccess.logMessage(buffer);
                 }
                 if (fc == WRITE_MULT_REGISTERS)
@@ -104,18 +115,15 @@ namespace modbus_gateway
                     for (uint16_t i = address; i < address + words; ++i)
                     {
                         uint16_t v = 0;
-                        request.get(7 + (i - address) * 2, v);
-                        dataaccess.setRegisterValue(block_index, i - _THIS->_device._dd._bds[block_index]._offset, v);
+                        request.get(REQUEST_DATA_OFFSET + (i - address) * 2, v);
+                        dataaccess.setRegisterValue(block_index, i - block_offset, v);
+
                         char buffer[200];
                         sprintf(buffer, "%04x", v);
                         dataaccess.logMessage(buffer);
-
-                        //  request.get()
-                        //  response.add(v);
                     }
                     char buffer[200];
-                    sprintf(buffer, "Writing: serverID=%d, FC=%d, start=%d length=%d block=%s", request.getServerID(), request.getFunctionCode(), address, words, _THIS->_device._dd._bds[block_index]._name.c_str());
-                    // Serial.printf("%s\r\n", buffer);
+                    sprintf(buffer, "Writing: serverID=%d, FC=%d, start=%d length=%d block=%s", request.getServerID(), request.getFunctionCode(), address, words, blocks[block_index]._name.c_str());
                     dataaccess.logMessage(buffer);
                 }
             }
@@ -125,7 +133,6 @@ namespace modbus_gateway
                 response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
                 char buffer[200];
                 sprintf(buffer, "Error: serverID=%d, FC=%d, length=%d", response.getServerID(), response.getFunctionCode(), response.size());
-                // Serial.printf("%s\r\n", buffer);
                 dataaccess.logMessage(buffer);
             }
             return response;
