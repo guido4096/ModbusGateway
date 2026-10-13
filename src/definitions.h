@@ -14,6 +14,121 @@
 
 namespace modbus_gateway
 {
+    // Lightweight, lock-free statistics counters used by both the Server::Process
+    // method and the Client::readFromMeter method. Counters are plain integer
+    // increments so the cost per request is a few CPU cycles. Rates (per second)
+    // are only computed when the statistics are read.
+    class Statistics
+    {
+    public:
+        // Called for every invocation of the tracked method.
+        void recordCall()
+        {
+            _calls++;
+        }
+        // Server side: a READ_HOLD_REGISTER request was served.
+        void recordRead()
+        {
+            _reads++;
+        }
+        // Server side: a WRITE (FC06/FC16) request was served.
+        void recordWrite()
+        {
+            _writes++;
+        }
+        // Server side: the request could not be processed (illegal data address).
+        void recordFailure()
+        {
+            _failures++;
+        }
+        // Client side: the request could be queued onto the TCP master.
+        void recordSuccess()
+        {
+            _success++;
+        }
+        // Client side: handleError or handleData detected a problem.
+        void recordError()
+        {
+            _errors++;
+        }
+        // Client side: handleData received a well-formed response.
+        void recordDataOk()
+        {
+            _dataOk++;
+        }
+
+        // Snapshot the counters and compute per-second rates over the elapsed
+        // interval. Also stores the current counters as the new baseline.
+        String allValuesAsString()
+        {
+            uint32_t now = millis();
+            uint32_t elapsed = now - _lastSampleMs;
+            if (elapsed == 0)
+                elapsed = 1;
+            _lastSampleMs = now;
+
+            uint32_t calls = _calls - _lastCalls;
+            uint32_t reads = _reads - _lastReads;
+            uint32_t writes = _writes - _lastWrites;
+            uint32_t failures = _failures - _lastFailures;
+            uint32_t success = _success - _lastSuccess;
+            uint32_t errors = _errors - _lastErrors;
+            uint32_t dataOk = _dataOk - _lastDataOk;
+            _lastCalls = _calls;
+            _lastReads = _reads;
+            _lastWrites = _writes;
+            _lastFailures = _failures;
+            _lastSuccess = _success;
+            _lastErrors = _errors;
+            _lastDataOk = _dataOk;
+
+            float scale = 1000.0f / float(elapsed);
+
+            String r;
+            char buf[200];
+            sprintf(buf, "interval=%lu ms\r\n", (unsigned long)elapsed);
+            r += buf;
+            sprintf(buf, "calls/s=%.2f\r\n", float(calls) * scale);
+            r += buf;
+            sprintf(buf, "read/s=%.2f\r\n", float(reads) * scale);
+            r += buf;
+            sprintf(buf, "write/s=%.2f\r\n", float(writes) * scale);
+            r += buf;
+            sprintf(buf, "failure/s=%.2f\r\n", float(failures) * scale);
+            r += buf;
+            sprintf(buf, "success/s=%.2f\r\n", float(success) * scale);
+            r += buf;
+            sprintf(buf, "error/s=%.2f\r\n", float(errors) * scale);
+            r += buf;
+            sprintf(buf, "dataok/s=%.2f\r\n", float(dataOk) * scale);
+            r += buf;
+            sprintf(buf, "totals: calls=%lu read=%lu write=%lu failure=%lu success=%lu error=%lu dataok=%lu\r\n",
+                    (unsigned long)_calls, (unsigned long)_reads,
+                    (unsigned long)_writes, (unsigned long)_failures,
+                    (unsigned long)_success, (unsigned long)_errors,
+                    (unsigned long)_dataOk);
+            r += buf;
+            return r;
+        }
+
+    private:
+        volatile uint32_t _calls = 0;
+        volatile uint32_t _reads = 0;
+        volatile uint32_t _writes = 0;
+        volatile uint32_t _failures = 0;
+        volatile uint32_t _success = 0;
+        volatile uint32_t _errors = 0;
+        volatile uint32_t _dataOk = 0;
+        volatile uint32_t _lastCalls = 0;
+        volatile uint32_t _lastReads = 0;
+        volatile uint32_t _lastWrites = 0;
+        volatile uint32_t _lastFailures = 0;
+        volatile uint32_t _lastSuccess = 0;
+        volatile uint32_t _lastErrors = 0;
+        volatile uint32_t _lastDataOk = 0;
+        volatile uint32_t _lastSampleMs = 0;
+    };
+
     class Log
     {
     public:
@@ -739,6 +854,11 @@ namespace modbus_gateway
         String getLog()
         {
             return _s._log.allValuesAsString();
+        }
+
+        String getStatistics()
+        {
+            return _s._statistics.allValuesAsString();
         }
 
         void logMessage(String m)

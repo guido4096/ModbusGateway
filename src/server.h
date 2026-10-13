@@ -54,11 +54,13 @@ namespace modbus_gateway
             uint16_t words;         // requested number of registers
             ModbusMessage response; // response message to be sent back
 
+            Server<MODBUS_TYPE> *self = _THIS; // static worker has no instance pointer
+            self->_statistics.recordCall();
+
             // get request values
             request.get(2, address);
             request.get(4, words);
 
-            Server<MODBUS_TYPE> *self = _THIS; // static worker has no instance pointer
             DataAccess<Server<MODBUS_TYPE>> dataaccess(*self);
 
             if (fc == WRITE_MULT_REGISTERS || fc == WRITE_HOLD_REGISTER)
@@ -97,6 +99,7 @@ namespace modbus_gateway
 
                 if (fc == READ_HOLD_REGISTER)
                 {
+                    self->_statistics.recordRead();
                     // Looks okay. Set up message with serverID, FC and length of data
                     response.add(request.getServerID(), request.getFunctionCode(), (uint8_t)(words * 2));
                     // Fill response with requested data
@@ -111,6 +114,7 @@ namespace modbus_gateway
                 }
                 if (fc == WRITE_MULT_REGISTERS)
                 {
+                    self->_statistics.recordWrite();
                     response.add(request.getServerID(), request.getFunctionCode(), (uint8_t)(words * 2));
                     for (uint16_t i = address; i < address + words; ++i)
                     {
@@ -130,6 +134,7 @@ namespace modbus_gateway
             else
             {
                 // No, either address or words are outside the limits. Set up error response.
+                self->_statistics.recordFailure();
                 response.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
                 char buffer[200];
                 sprintf(buffer, "Error: serverID=%d, FC=%d, length=%d", response.getServerID(), response.getFunctionCode(), response.size());
@@ -137,6 +142,7 @@ namespace modbus_gateway
             }
             return response;
         }
+        Statistics _statistics;
         modbus_gateway::Log _log;
         template <typename T>
         friend class DataAccess;

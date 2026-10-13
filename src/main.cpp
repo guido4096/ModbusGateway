@@ -136,6 +136,7 @@ void handleRoot()
     <a href=\"logalfen\">Log Alfen messsages</a><br/>\
     <a href=\"logsolaredge\">Log SolarEdge messsages</a><br/>\
     <a href =\"logoptimizer\">Log Optimizer messsages</a><br/>\
+    <a href =\"statistics\">Statistics</a><br/>\
     <a href =\"optimizer0\">Optimizer 0</a><br/>\
     <a href =\"optimizer1\">Optimizer 1</a><br/>\
     <a href =\"optimizer2\">Optimizer 2</a><br/>\
@@ -185,6 +186,37 @@ void handleOptimizer()
 {
     modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
     String r = o.allValuesAsString();
+    server.send(200, "text/plain", r.c_str());
+}
+
+void handleStatistics()
+{
+    String r;
+    {
+        modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::WattNode>> wn(wattnode);
+        r += "WattNode (RTU server)\r\n";
+        r += wn.getStatistics();
+    }
+    {
+        modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
+        r += "\r\nOptimizer (TCP server)\r\n";
+        r += o.getStatistics();
+    }
+    {
+        modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24_E1>> m(meter);
+        r += "\r\nMeter (TCP client)\r\n";
+        r += m.getStatistics();
+    }
+    {
+        modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::Alfen>> a(alfen);
+        r += "\r\nAlfen (TCP client)\r\n";
+        r += a.getStatistics();
+    }
+    {
+        modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::SolarEdge>> s(solaredge);
+        r += "\r\nSolarEdge (TCP client)\r\n";
+        r += s.getStatistics();
+    }
     server.send(200, "text/plain", r.c_str());
 }
 
@@ -379,6 +411,7 @@ void setup()
     server.on("/logalfen", handleLogAlfen);
     server.on("/logsolaredge", handleLogSolarEdge);
     server.on("/logoptimizer", handleLogOptimizer);
+    server.on("/statistics", handleStatistics);
     server.on("/optimizer0", handleOptimizer0);
     server.on("/optimizer1", handleOptimizer1);
     server.on("/optimizer2", handleOptimizer2);

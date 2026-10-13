@@ -56,8 +56,10 @@ namespace modbus_gateway
 
                 Error err = _tcp.addRequest(reinterpret_cast<uint32_t>(t), _tcp_server_id, READ_HOLD_REGISTER, start_reg, nbr_reg);
                 // Serial.printf("readBlockFromMeter Token=%08X\r\n", t);
+                _statistics.recordCall();
                 if (err != SUCCESS)
                 {
+                    _statistics.recordFailure();
                     char buffer[200];
                     ModbusError e(err);
                     sprintf(buffer, "Error creating request: %02X - %s, offset=%i, nbr_reg=%i, %i", (int)e, (const char *)e, start_reg, nbr_reg, _tcp.pendingRequests());
@@ -66,6 +68,7 @@ namespace modbus_gateway
                 }
                 else
                 {
+                    _statistics.recordSuccess();
                     result = true;
                 }
             }
@@ -106,6 +109,7 @@ namespace modbus_gateway
             // ModbusError wraps the error code and provides a readable error message for it
             ModbusError me(error);
             T *t = reinterpret_cast<T *>(token);
+            t->_this->_statistics.recordError();
             const char *block_name = t->_this->_device._dd._bds[t->_blockindex]._name.c_str();
 
             char buffer[200];
@@ -149,10 +153,12 @@ namespace modbus_gateway
                         dataaccess.setRegisterValue(t->_blockindex, index++, v.w);
                     }
                     t->_this->_dataRead = true;
+                    t->_this->_statistics.recordDataOk();
                     dataaccess.setTransaction(t->_blockindex, t->_transaction);
                 }
                 else
                 {
+                    t->_this->_statistics.recordError();
                     char buffer[200];
                     sprintf(buffer, "Expected bytes: %i, received bytes: %i", t->_nbr_reg * 2, received_bytes);
                     Serial.printf("%s\r\n", buffer);
@@ -161,11 +167,13 @@ namespace modbus_gateway
             }
             else
             {
+                t->_this->_statistics.recordError();
                 Serial.printf("ERROR: Block for transaction %i not found\r\n", t->_transaction);
             }
             delete t;
         }
 
+        Statistics _statistics;
         modbus_gateway::Log _log;
         uint32_t _transaction;
         ModbusClientTCP &_tcp;
