@@ -116,10 +116,10 @@ unsigned long prevTime4;
 unsigned long startTime;
 
 // Poll intervals for the meter and the optional optimizer inputs (milliseconds)
-static const unsigned long INTERVAL_DYNAMIC = 300;   // instantaneous meter values (power, voltage, current)
+static const unsigned long INTERVAL_DYNAMIC = 100;   // instantaneous meter values (power, voltage, current)
 static const unsigned long INTERVAL_ENERGY = 2000;   // energy counters
 static const unsigned long INTERVAL_SLOW = 10000;    // time and tariff registers (hardly ever change)
-static const unsigned long INTERVAL_OPTIMIZER = 500; // Alfen and (when needed) SolarEdge values
+static const unsigned long INTERVAL_OPTIMIZER = 200; // Alfen and (when needed) SolarEdge values
 
 void handleRoot()
 {
@@ -400,11 +400,11 @@ void setup()
     // Start TCP Slave
     modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
     bool b = tcp_server.start(504, 4, 100);
-    char buffer[200];
-    sprintf(buffer, "Started: %i", b);
-    o.logMessage(buffer);
     int32_t optStrat = preferences.getInt("opt_strat", 0);
     o.setInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy, optStrat);
+    char buffer[200];
+    sprintf(buffer, "Starting Strategy: %i", optStrat);
+    o.logMessage(buffer);
 
     // Setup timers to allow tracking elapsed time
     prevTime1 = millis() - 10000; // trigger timers immediately at startup
@@ -512,5 +512,8 @@ void loop()
     }
 
     if (jobScheduled)
-        delay(100);
+    {
+        taskYIELD();
+        // delay(10);
+    }
 }

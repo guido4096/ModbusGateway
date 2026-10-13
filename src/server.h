@@ -105,9 +105,9 @@ namespace modbus_gateway
                         uint16_t v = dataaccess.getRegisterValue(block_index, i - block_offset);
                         response.add(v);
                     }
-                    char buffer[200];
-                    sprintf(buffer, "Response: serverID=%d, FC=%d, start=%d length=%d block=%s", response.getServerID(), response.getFunctionCode(), address, words, blocks[block_index]._name.c_str());
-                    dataaccess.logMessage(buffer);
+                    // char buffer[200];
+                    // sprintf(buffer, "Response: serverID=%d, FC=%d, start=%d length=%d block=%s", response.getServerID(), response.getFunctionCode(), address, words, blocks[block_index]._name.c_str());
+                    // dataaccess.logMessage(buffer);
                 }
                 if (fc == WRITE_MULT_REGISTERS)
                 {
@@ -118,9 +118,9 @@ namespace modbus_gateway
                         request.get(REQUEST_DATA_OFFSET + (i - address) * 2, v);
                         dataaccess.setRegisterValue(block_index, i - block_offset, v);
 
-                        char buffer[200];
-                        sprintf(buffer, "%04x", v);
-                        dataaccess.logMessage(buffer);
+                        // char buffer[200];
+                        // sprintf(buffer, "%04x", v);
+                        // dataaccess.logMessage(buffer);
                     }
                     char buffer[200];
                     sprintf(buffer, "Writing: serverID=%d, FC=%d, start=%d length=%d block=%s", request.getServerID(), request.getFunctionCode(), address, words, blocks[block_index]._name.c_str());

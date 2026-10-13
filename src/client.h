@@ -29,7 +29,7 @@ namespace modbus_gateway
 
         void connect()
         {
-            _tcp.setTimeout(2000, 200);
+            _tcp.setTimeout(2000, 10);
             _tcp.begin();
             _tcp.setTarget(_remote, _tcp_port);
         }
