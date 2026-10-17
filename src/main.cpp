@@ -130,7 +130,7 @@ void handleRoot()
     <a href=\"alfen\">Alfen values</a><br/>\
     <a href=\"solaredge\">SolarEdge values</a><br/>\
     <a href=\"optimizer\">Optimizer values</a><br/>\
-    <a href=\"description\">Description of WattNode and Meter device</a><br/>\
+    <a href=\"description\">Description of devices</a><br/>\
     <a href=\"logmeter\">Log Meter messsages</a><br/>\
     <a href=\"logwattnode\">Log Wattnode messsages</a><br/>\
     <a href=\"logalfen\">Log Alfen messsages</a><br/>\

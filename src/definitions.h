@@ -518,6 +518,13 @@ namespace modbus_gateway
         using RegisterType = typename MODBUS_TYPE::e_registers;
         static DeviceDescription makeDD(const char *name, const std::vector<BlockDefinition<MODBUS_TYPE>> &blocks)
         {
+            // The enum (in the device header) and the table (passed in here) are
+            // written independently. Check up front that they describe exactly
+            // the same registers, so any drift is reported instead of silently
+            // producing wrong register offsets. The problems are collected so
+            // they can be included in the device description.
+            String problemReport = reportRegisterTableProblems(name, blocks);
+  
             std::vector<BlockDescription> bl;
             std::vector<RegisterReference> rr;
             rr.resize(RegisterType::last);
@@ -529,7 +536,7 @@ namespace modbus_gateway
                 blockNbr++;
                 bl.push_back(b);
             }
-            return DeviceDescription(name, bl, rr);
+            return DeviceDescription(name, bl, rr, problemReport);
         }
 
         // Get a description of the device
@@ -539,6 +546,13 @@ namespace modbus_gateway
             char buf[200];
             sprintf(buf, "Device: %s\r\n", _name.c_str());
             result += buf;
+            // Report the problems found between the register enum and the
+            // block table. Always state the outcome explicitly, also when
+            // there is nothing wrong.
+            if (_problems.length() > 0)
+                result += _problems;
+            else
+                result += "  No problems detected in the device description\r\n";
             for (auto i = _bds.begin(); i < _bds.end(); i++)
             {
                 sprintf(buf, "  Block: %s, offset=0x%04x (%06u), numreg=%i\r\n", i->_name.c_str(), i->_offset, i->_offset, i->_number_reg);
@@ -557,9 +571,10 @@ namespace modbus_gateway
         const String _name;
         const std::vector<BlockDescription> _bds;
         const std::vector<RegisterReference> _rr;
+        const String _problems;
 
     private:
-        DeviceDescription(const char *name, const std::vector<BlockDescription> &bds, std::vector<RegisterReference> rr) : _bds(bds), _name(name), _rr(rr) {}
+        DeviceDescription(const char *name, const std::vector<BlockDescription> &bds, std::vector<RegisterReference> rr, const String &problems = String()) : _bds(bds), _name(name), _rr(rr), _problems(problems) {}
         static BlockDescription makeBlock(const String &name, uint16_t blockNbr, uint16_t offset, const std::vector<RegisterDefinition<MODBUS_TYPE>> &registers, std::vector<RegisterReference> &rr)
         {
             std::vector<RegisterDescription> rl;
@@ -576,6 +591,49 @@ namespace modbus_gateway
             }
 
             return BlockDescription(name, rl, offset, number);
+        }
+
+        // Reports the registers that do not line up between the enum and the
+        // block table: every enum value below `last` must appear exactly once
+        // in the table, and no other value may appear. Called once from makeDD.
+        // The problems are returned as a string so that they can be included
+        // in the device description, and are printed to the serial port as well.
+        static String reportRegisterTableProblems(const char *name, const std::vector<BlockDefinition<MODBUS_TYPE>> &blocks)
+        {
+            String result;
+            char buf[200];
+            std::vector<int> seen(RegisterType::last, 0);
+            for (auto b = blocks.begin(); b < blocks.end(); b++)
+            {
+                for (auto r = b->_rd.begin(); r < b->_rd.end(); r++)
+                {
+                    int idx = int32_t(r->_register);
+                    if (idx < 0 || idx >= RegisterType::last)
+                    {
+                        sprintf(buf, "device '%s': register value %i is out of range (0..%i)\r\n",
+                                name, idx, (int)RegisterType::last - 1);
+                        Serial.print(buf);
+                        result += buf;
+                        continue;
+                    }
+                    seen[idx]++;
+                }
+            }
+
+            for (int idx = 0; idx < (int)RegisterType::last; idx++)
+            {
+                if (seen[idx] == 0)
+                    sprintf(buf, "device '%s': register value %i is declared in the enum but missing from the table\r\n",
+                            name, idx);
+                else if (seen[idx] > 1)
+                    sprintf(buf, "device '%s': register value %i appears %i times in the table\r\n",
+                            name, idx, seen[idx]);
+                else
+                    continue;
+                Serial.print(buf);
+                result += buf;
+            }
+            return result;
         }
     };
 
