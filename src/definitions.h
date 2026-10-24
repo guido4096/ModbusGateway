@@ -338,6 +338,25 @@ void encode(uint16_t* data, const RegisterDescription& r, T value) {
     storeBits(data, r.words, r.high_word_first, bits);
 }
 
+// Shared schema API: device headers provide only the register IDs and map.
+// Inherited description<R>() is a direct array index, never a name search.
+// The schema itself must define RegisterId, register_count and constexpr metadata.
+template<typename Schema> class Device;
+
+template<typename Schema>
+struct SchemaApi {
+    using DeviceType = Device<Schema>;
+
+    template<auto R>
+    static constexpr const RegisterDescription& description() {
+        static_assert(std::is_same_v<decltype(R), typename Schema::RegisterId>,
+                      "Register ID belongs to another schema");
+        constexpr auto index = static_cast<std::size_t>(R);
+        static_assert(index < Schema::register_count, "Register index out of range");
+        return Schema::metadata.registers[index];
+    }
+};
+
 template<typename Schema>
 class Device {
 public:
