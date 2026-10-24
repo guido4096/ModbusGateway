@@ -23,12 +23,24 @@ int main() {
   assert(a.readHoldingRegisters(320,2,words));
   assert(words[0]==0x0000 && words[1]==0x3f80);
   auto e=EM24_E1::makeDevice();
-  const uint16_t raw[2]{0xffff,0xff9c}; // -100, signed 32-bit (=> -10 V after /10)
+  const uint16_t raw[2]{0xff9c,0xffff}; // EM24 low-word-first -100 (=> -10 V after /10)
   assert(e.writeHoldingRegisters(0,2,raw));
   assert(e.get<EM24_E1::l1_voltage>()==-100);
+  assert(e.readHoldingRegisters(0,2,words));
+  assert(words[0]==0xff9c && words[1]==0xffff);
+  // Captured corrupted readings reversed back into plausible EM24 values.
+  const uint16_t voltage_sample[2]{0x08d2,0x0000}; // raw 2258 => 225.8 V
+  assert(e.writeHoldingRegisters(0,2,voltage_sample));
+  assert(e.get<EM24_E1::l1_voltage>() == 2258);
+  const uint16_t current_sample[2]{0x19ae,0x0000}; // raw 6574 => 6.574 A
+  assert(e.writeHoldingRegisters(12,2,current_sample));
+  assert(e.get<EM24_E1::l1_current>() == 6574);
+  const uint16_t power_sample[2]{0xc635,0xffff}; // raw -14795 => -1479.5 W
+  assert(e.writeHoldingRegisters(18,2,power_sample));
+  assert(e.get<EM24_E1::l1_power_active>() == -14795);
   assert(!e.readHoldingRegisters(0x0054,2,words)); // crosses hole before energy block
   assert(e.readHoldingRegisters(0,2,words));
-  assert(words[0]==0xffff && words[1]==0xff9c);
+  assert(words[0]==0x08d2 && words[1]==0x0000);
   auto o=Optimizer::makeDevice();
   o.set<Optimizer::optimizer_strategy>(-1);
   assert(o.readHoldingRegisters(0,2,words));

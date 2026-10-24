@@ -52,6 +52,13 @@ def main():
         all_count=0; discrepancies=[]
         for filename,schema in SPECS:
             base=legacy_rows(OLD/(filename+'.cpp'),filename)
+            # Original ESP32 Value union exposes low 16-bit word as w1.
+            # For EM24 int32 registers, old _wordorder=true therefore means
+            # LOW word first on the wire, despite the new field being named
+            # high_word_first. Compare effective encoding, not boolean spelling.
+            if filename == 'em24_e1':
+                base = [row[:7] + (0,) + row[8:] if row[5] in (3, 4) else row
+                        for row in base]
             got=actual.get(filename,[])
             if len(base)!=len(got): discrepancies.append(f'{schema}: original {len(base)} registers, new {len(got)}')
             for idx,(b,g) in enumerate(zip(base,got)):
