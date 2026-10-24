@@ -6,45 +6,6 @@
  * @date      04-Mar-2025
  * @note      Definitions to support formalization modbus register definitions
  */
-/**
- * @brief Compile-time Modbus device schemas and runtime register storage.
- *
- * A device header declares its register ID enum and a single `metadata` object:
- *
- *   inline static constexpr auto metadata = makeDeviceSchema<RegisterId>(
- *       block("measurements", 1000,
- *           field<DataType::float32>(power, Scaling::none,
- *                                    WordOrder::HighFirst, "Power", "W", 0)));
- *
- * The declaration flows through four layers:
- *
- *  1. field<Type>(...) returns a TypedField. Its C++ type carries the register
- *     width and data type; its value carries the ID, scaling, word order,
- *     description, unit and raw default bits. No field property is implicit.
- *  2. block(...) packs typed fields in declaration order. Their widths determine
- *     consecutive register addresses within the block.
- *  3. makeDeviceSchema(...) runs during constant evaluation. It derives the
- *     register count (from RegisterId::last), block count and total word count,
- *     then constructs arrays indexed by register ID and block number. It also
- *     checks missing/duplicate IDs, address overflow and overlapping blocks.
- *     Each concrete schema should static_assert(metadata.valid).
- *  4. SchemaApi<Schema> and Device<Schema> consume those arrays. SchemaApi
- *     provides description<R>(); Device stores only the mutable register words
- *     and provides typed get<R>()/set<R>() plus address-based Modbus access.
- *
- * `description<R>()`, `get<R>()` and `set<R>()` resolve R to a constexpr array
- * index; none performs a string search. By contrast, a Modbus request gives a
- * runtime wire address: findWord() scans the (typically small) block table.
- * Thus constant-time ID lookup does not imply constant-time address lookup.
- *
- * Schema metadata is immutable; Device values, server ID, statistics and logs
- * are runtime state. DataAccess<Owner> locks the owning Client/Server while
- * accessing that state. printDeviceDescription() formats constexpr metadata
- * at runtime for diagnostics, without allocating a temporary large String.
- *
- * C++17 is sufficient: typed helper return types and variadic packs preserve
- * the sizes missing from std::initializer_list-based descriptions.
- */
 #pragma once
 #include <Arduino.h>
 #include <array>
@@ -58,6 +19,9 @@
 #include <time.h>
 
 namespace modbus_gateway {
+    // Plain counters are inexpensive on the request path, but `volatile` does not
+    // make their increments atomic. Access from multiple tasks needs external
+    // synchronization if exact counts matter.
     // Lightweight, lock-free statistics counters used by both the Server::Process
     // method and the Client::readFromMeter method. Counters are plain integer
     // increments so the cost per request is a few CPU cycles. Rates (per second)
@@ -217,9 +181,11 @@ namespace modbus_gateway {
         std::vector<String> _log;
     };
 
-// Physical wire representation. WordOrder describes which 16-bit word of a
-// 32-bit value appears first on the Modbus wire (not host memory ordering).
-// Scaling is applied when decoding an integer as an engineering float.
+// A device field describes the *wire representation*, not its engineering
+// value. Scaling is applied by engineering-value helpers/diagnostics; typed
+// get/set operate on the unscaled native representation.
+// WordOrder refers to the significance of the first 16-bit Modbus word,
+// independent of the ESP32 CPU byte order.
 enum class DataType : uint8_t { float32, int16, uint16, int32, uint32 };
 enum class WordOrder : uint8_t { HighFirst, LowFirst };
 enum class Scaling : uint16_t { none=1, ten=10, hundred=100, thousand=1000 };
@@ -238,9 +204,10 @@ template<> struct Native<DataType::uint16> { using type = uint16_t; };
 template<> struct Native<DataType::int32> { using type = int32_t; };
 template<> struct Native<DataType::uint32> { using type = uint32_t; };
 
-/** One compiled logical field. `address` is the zero-based Modbus address;
- * `word_offset` is local to its block, while `storage_offset` indexes the
- * flattened Device word array. The 32-bit default is a *raw bit pattern*.
+/** A computed logical-register descriptor, indexed directly by RegisterId.
+ * `address` is the Modbus wire address; `word_offset` is block-relative and
+ * `storage_offset` addresses the flat runtime word array. Multiword fields
+ * occupy consecutive words and may be read partially by the protocol layer.
  */
 struct RegisterDescription {
     uint16_t address;
@@ -255,7 +222,6 @@ struct RegisterDescription {
     const char* unit;
     uint32_t default_bits;     // raw IEEE754/int bits; dynamic defaults set per instance
 };
-/** One contiguous address interval and its location in the flat word array. */
 struct BlockDescription {
     const char* name;
     uint16_t address;
@@ -263,9 +229,12 @@ struct BlockDescription {
     uint16_t storage_offset;
 };
 
-// The sizes are template arguments so std::array has exact dimensions.
-// N comes from the register-ID enum sentinel, B and Words from the typed blocks.
-// The objects are constexpr in each schema; mutable data is *not* stored here.
+// Small metadata records live in flash/read-only storage; buffers live in the Device.
+// No lookup loops are used when a register is identified by its enum value.
+// The array extents are part of the type, so no schema containers or
+// dynamically allocated descriptions are built at device startup. `valid`
+// captures checks performed during constant evaluation; each schema must
+// assert it before being used.
 template<typename Id, std::size_t N, std::size_t B, std::size_t Words>
 struct StaticDescription {
     static constexpr std::size_t word_count = Words;
@@ -275,9 +244,12 @@ struct StaticDescription {
 };
 
 
-// TypedField is a *description*, not a storage location. Type is a template
-// argument so its word width is available without inspecting a runtime value.
-// All other properties are deliberately explicit at each field() call site.
+// C++17 value-and-type schema builder. Widths and array dimensions are
+// derived from declarations, not repeated by each device.
+// Every field explicitly specifies type, scaling, word order and raw default.
+// A field carries its width/type in the C++ type (TypedField<Id, Type>),
+// and its per-register metadata in constexpr values. This separation lets
+// block() sum field widths without restating register or block counts.
 template<typename Id, DataType Type>
 struct TypedField {
     using id_type = Id;
@@ -297,8 +269,9 @@ constexpr auto field(Id id, Scaling scaling, WordOrder order,
     return TypedField<Id, Type>{id, scaling, order, name, unit, default_bits};
 }
 
-// A block's field tuple preserves the declaration order, while its type pack
-// enables the fold expression to calculate the number of 16-bit words.
+// A block is a contiguous wire address range. Its tuple retains the
+// declaration order; the word count is a fold over the declared field types.
+// Gaps between blocks are permitted, but gaps inside a block are not.
 template<typename... Fields>
 struct TypedBlock {
     static constexpr std::size_t word_count = (Fields::word_count + ... + 0);
@@ -313,16 +286,16 @@ constexpr auto block(const char* name, uint16_t address, Fields... fields) {
     return TypedBlock<Fields...>{name, address, std::tuple<Fields...>{fields...}};
 }
 
-/**
- * @brief Materialize a field/block declaration as a fixed-size metadata table.
+/** Materialize the schema during constant evaluation.
+ * Register IDs form dense indexes [0, Id::last); the enumeration does not
+ * encode wire addresses. Each field is placed in declaration order within
+ * its block, and the resulting descriptor is stored at registers[field.id].
+ * Blocks are packed into a separate flat storage array, irrespective of gaps
+ * in Modbus addresses.
  *
- * `Blocks...` supplies block count and widths at compile time. Each field's
- * enum ID is used as the destination array index (not as its wire address).
- * Iteration walks each block in source order to assign sequential addresses and
- * flat storage offsets. The separate `assigned` array detects duplicate and
- * missing IDs; an all-true validation result is asserted by device headers.
- * This builder is called from a `constexpr` metadata initializer, so the work
- * occurs during compilation rather than at device startup.
+ * The `assigned` bitmap rejects missing/duplicate IDs; bounds and overlap
+ * checks reject malformed wire ranges. A schema-level static_assert(valid)
+ * turns these checks into build failures.
  */
 template<typename Id, typename... Blocks>
 constexpr auto makeDeviceSchema(const Blocks&... blocks) {
@@ -330,11 +303,12 @@ constexpr auto makeDeviceSchema(const Blocks&... blocks) {
     constexpr std::size_t B = sizeof...(Blocks);
     constexpr std::size_t Words = (Blocks::word_count + ... + 0);
     StaticDescription<Id, N, B, Words> m{};
-    // Index by ID, even if the order of fields in the blocks differs from the
-    // enum order. This makes description<SomeId>() one indexed array access.
     std::array<bool, N> assigned{};
     std::size_t blockNo = 0, storage = 0;
 
+    // These generic lambdas operate on values, but std::apply and the fold
+    // expression expand the field types at compilation. They preserve the
+    // source declaration order when computing wire and storage offsets.
     auto appendBlock = [&](const auto& b) {
         std::size_t offset = 0;
         std::apply([&](const auto&... fs) {
@@ -384,10 +358,9 @@ constexpr auto makeDeviceSchema(const Blocks&... blocks) {
     return m;
 }
 
-// Raw word codecs. Explicit shifts make 32-bit wire order independent of the
-// ESP32's native endianness. Floating-point bits are moved with memcpy rather
-// than reading a different active union member. Keep encoding regression tests
-// with known raw words: encode/decode round trips alone can miss mirrored bugs.
+// Modbus carries 16-bit words. Explicitly assemble/disassemble the 32-bit
+// bit pattern so host endianness cannot silently change the wire word order.
+// memcpy preserves float bit patterns without inactive-union-member access.
 inline uint32_t toBits(float x) {
     static_assert(sizeof(float)==4, "IEEE754 float32 required");
     uint32_t bits; std::memcpy(&bits, &x, 4); return bits;
@@ -407,6 +380,45 @@ inline void storeBits(uint16_t* words, uint8_t count, bool highFirst, uint32_t b
     words[1] = highFirst ? lo : hi;
 }
 
+/**
+ * Compile-time codec for typed register access.
+ * Type and word order are non-type template arguments: there is no runtime
+ * RegisterDescription parameter, type switch, or word-order branch. Runtime
+ * Modbus address requests continue to use the existing raw-word path.
+ *
+ * Keep the independent known-wire-word regression tests: self round-trips
+ * alone cannot detect a consistently reversed word order.
+ */
+template<DataType Type, bool HighFirst>
+inline typename Native<Type>::type decodeTyped(const uint16_t* words) {
+    using T = typename Native<Type>::type;
+    if constexpr (Type == DataType::int16) {
+        // Converting an unsigned word outside the signed range is implementation-defined;
+        // the ESP32 toolchain uses the expected two's-complement interpretation.
+        return static_cast<int16_t>(words[0]);
+    } else if constexpr (Type == DataType::uint16) {
+        return words[0];
+    } else {
+        const uint32_t bits = loadBits(words, 2, HighFirst);
+        if constexpr (Type == DataType::float32) return fromBits(bits);
+        else return static_cast<T>(bits);
+    }
+}
+
+template<DataType Type, bool HighFirst>
+inline void encodeTyped(uint16_t* words, typename Native<Type>::type value) {
+    if constexpr (Type == DataType::float32) {
+        storeBits(words, 2, HighFirst, toBits(value));
+    } else if constexpr (Type == DataType::int16 || Type == DataType::uint16) {
+        words[0] = static_cast<uint16_t>(value);
+    } else {
+        storeBits(words, 2, HighFirst, static_cast<uint32_t>(value));
+    }
+}
+
+// Generic runtime codecs are used where the descriptor is selected at
+// runtime (for example diagnostic formatting). Typed get/set below instead
+// instantiate decodeTyped/encodeTyped with compile-time codec parameters.
 template<typename T>
 T decode(const uint16_t* data, const RegisterDescription& r) {
     uint32_t bits = loadBits(data, r.words, r.high_word_first);
@@ -431,16 +443,14 @@ void encode(uint16_t* data, const RegisterDescription& r, T value) {
     storeBits(data, r.words, r.high_word_first, bits);
 }
 
-/**
- * @brief Common interface inherited by concrete device schema declarations.
- *
- * This CRTP base can be named while Schema is incomplete: lookup of
- * Schema::RegisterId/metadata is delayed until description<R>() is instantiated.
- * The non-type template parameter R identifies a *register ID*; its enum type
- * and bounds are checked at compile time before direct indexing.
- */
+// Shared schema API: device headers provide only the register IDs and map.
+// Inherited description<R>() is a direct array index, never a name search.
+// The schema defines RegisterId and constexpr metadata; sizes are derived.
 template<typename Schema> class Device;
 
+// CRTP shares the public schema interface without forcing each device to
+// repeat a description<R>() function. Instantiation of its member template
+// is deferred until the derived Schema is complete and metadata is defined.
 template<typename Schema>
 struct SchemaApi {
     using DeviceType = Device<Schema>;
@@ -455,15 +465,11 @@ struct SchemaApi {
     }
 };
 
-/**
- * @brief One live instance of a schema: flat raw words plus server ID.
- *
- * The compile-time table determines field types, offsets and defaults. The
- * constructor initializes each field's raw words from default_bits. get/set
- * select the declared native C++ type at compile time and decode/encode via
- * the metadata. Wire-address reads/writes operate on raw 16-bit words, so they
- * can begin inside a 32-bit value without interpreting the logical field.
- * Synchronization belongs to the owning Client/Server via DataAccess.
+/** Mutable state belonging to one device instance.
+ * All current register words are held in one fixed-size array. Descriptors
+ * remain in Schema::metadata (immutable), and the constructor copies the
+ * declared raw defaults into the appropriate word positions. Runtime-only
+ * values such as a device serial number may then be installed by a factory.
  */
 template<typename Schema>
 class Device {
@@ -484,8 +490,6 @@ public:
     void setServerId(uint8_t id) { server_id_ = id; }
     uint8_t serverId() const { return server_id_; }
 
-    // The register ID is a template argument, so its declared data type can
-    // select a native return/argument type at compile time.
     template<RegisterType R>
     using value_type = typename Native<metadata.registers[static_cast<std::size_t>(R)].type>::type;
 
@@ -496,27 +500,34 @@ public:
         return metadata.registers[i];
     }
 
+    // Every descriptor property used by the typed access path is known at
+    // instantiation time. No runtime metadata lookup or codec dispatch occurs.
     template<RegisterType R>
     value_type<R> get() const {
-        constexpr auto& d = description<R>();
-        return decode<value_type<R>>(words_.data()+d.storage_offset, d);
+        constexpr auto d = description<R>();
+        return decodeTyped<d.type, d.high_word_first>(
+            words_.data() + d.storage_offset);
     }
 
     template<RegisterType R>
     void set(value_type<R> v) {
-        constexpr auto& d = description<R>();
-        encode(words_.data()+d.storage_offset, d, v);
+        constexpr auto d = description<R>();
+        encodeTyped<d.type, d.high_word_first>(
+            words_.data() + d.storage_offset, v);
     }
 
-    // Runtime ID lookup also O(1), with bounds checked once.
+    // Dynamic ID lookup is also constant time: enum value -> descriptor index.
+    // Only wire-address lookup requires walking the block ranges.
     static const RegisterDescription* describe(RegisterType id) {
         auto i = static_cast<std::size_t>(id);
         return i < metadata.registers.size() ? &metadata.registers[i] : nullptr;
     }
 
-    // Modbus requests contain runtime *addresses*, not enum IDs. Validate the
-    // entire range before copying/writing, so holes never produce partial data
-    // or partial writes. Complexity is proportional to count * block count.
+    // Address-based protocol requests traverse blocks (B is typically small).
+    // A request crossing a hole fails, rather than fabricating zeros.
+    // Validate the *entire* requested range before copying any words. A
+    // request may begin midway through a 32-bit field, as Modbus addresses
+    // words rather than logical C++ values. Holes between blocks are invalid.
     bool readHoldingRegisters(uint16_t address, uint16_t count, uint16_t* output) const {
         if (!output || count == 0 || uint32_t(address)+count > 65536) return false;
         for (uint32_t n=0; n<count; ++n) {
@@ -527,6 +538,8 @@ public:
             output[n] = words_[findWord(uint32_t(address)+n)];
         return true;
     }
+    // Writes are likewise all-or-nothing with respect to address validity.
+    // This raw protocol path does not apply scaling or field-level permissions.
     bool writeHoldingRegisters(uint16_t address, uint16_t count, const uint16_t* input) {
         if (!input || count == 0 || uint32_t(address)+count > 65536) return false;
         for (uint32_t n=0; n<count; ++n)
@@ -535,7 +548,7 @@ public:
             words_[findWord(uint32_t(address)+n)] = input[n];
         return true;
     }
-    // Human-readable diagnostic dump, preserving the original HTTP interface.
+    // Format the current register values using the schema descriptions and scaling.
     String allValuesAsString() const {
         String result;
         char buf[96];
@@ -597,6 +610,8 @@ public:
 
 private:
     static constexpr std::size_t invalid_position = static_cast<std::size_t>(-1);
+    // Convert a wire address to a flat storage offset. Each disjoint block
+    // has its own wire base; its words are packed contiguously in words_.
     static std::size_t findWord(uint32_t address) {
         for (const auto& b : metadata.blocks)
             if (address >= b.address && address < uint32_t(b.address)+b.words)
@@ -607,10 +622,9 @@ private:
     uint8_t server_id_ = 0;
 };
 
-// Presentation is intentionally separate from schema construction.
-// Schema::name and all addresses/names are compile-time data; producing a
-// textual report is inherently runtime work. Output needs print(const char*)
-// (Arduino Serial and the local String adapter both satisfy that interface).
+// The device name comes from Schema::name. Metadata is constexpr;
+// formatting is performed only when diagnostics are requested.
+// A Stream-like sink needs only print(const char*), as Arduino Print does.
 template<typename Schema, typename Output>
 void printDeviceDescription(Output& output) {
     const auto& metadata = Schema::metadata;
@@ -640,7 +654,7 @@ void printDeviceDescription(Output& output) {
     }
 }
 
-// Compatibility with HTTP handlers that need a String.
+// Collect the diagnostic output in an Arduino String.
 template<typename Schema>
 String getDeviceDescription() {
     struct StringOutput {
@@ -653,10 +667,11 @@ String getDeviceDescription() {
     return result;
 }
 
-/** RAII view of the live device owned by a Client or Server.
- * Lock is held for the whole lifetime of DataAccess, including diagnostic
- * formatting. Do not retain it while performing slow network operations.
- * The owner exposes _Mutex, _device, _statistics and _log as friends.
+// Optional lock-scoped access. The owner must expose _Mutex and _device.
+/** Scope-bound exclusive access to an owner's device and diagnostics.
+ * The guard acquires the owner mutex for its entire lifetime; callers must
+ * not retain the object across network operations or other blocking work.
+ * The owner provides _device, _Mutex, _log and _statistics as friends.
  */
 template<typename Owner>
 class DataAccess {

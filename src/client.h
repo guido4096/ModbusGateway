@@ -15,6 +15,12 @@
 #include "ModbusClientTCP.h"
 
 namespace modbus_gateway {
+/** Asynchronous Modbus TCP reader and local register cache.
+ * A schema supplies immutable addresses/types, while Device<Schema> stores
+ * the latest raw values received from the remote meter. Requests enqueue
+ * immediately and callbacks publish complete responses under DataAccess.
+ * This class owns neither the transport nor its lifetime.
+ */
 template<class MODBUS_TYPE>
 class Client {
 public:
@@ -22,6 +28,9 @@ public:
     using RegisterType = typename Schema::RegisterId;
     using DeviceType = Device<Schema>;
 
+    // eModbus uses one data/error handler pair per transport instance.
+    // Do not attach unrelated Client objects to the same transport without
+    // an external callback dispatcher.
     Client(ModbusClientTCP& tcp, const IPAddress& remote, uint16_t tcp_port, uint16_t tcp_server_id)
         : _tcp(tcp), _remote(remote), _tcp_port(tcp_port), _tcp_server_id(tcp_server_id) {
         _tcp.onDataHandler(&Client::handleData);
@@ -42,12 +51,17 @@ public:
     template<RegisterType First, RegisterType Last>
     bool readFromMeter() { return readFromMeter(First, Last); }
 
+    // A range uses the inclusive *logical* first/last registers. Convert
+    // to a single Modbus FC03 span, including every word of the last field.
+    // Only ranges within one declared block and <=125 words are supported.
     bool readFromMeter(const RegisterDescription& first, const RegisterDescription& last) {
         if (first.block != last.block || first.address > last.address) return false;
         const uint32_t count = uint32_t(last.address) + last.words - first.address;
         if (!count || count > 125) return false;
         return submit(first.block, first.address, static_cast<uint16_t>(count));
     }
+    // Human-readable name lookup is for operational convenience; hot paths
+    // should use the block index or explicit register IDs instead.
     bool readBlockFromMeter(const String& name) {
         const auto& blocks = DeviceType::blocks();
         for (std::size_t i = 0; i < blocks.size(); ++i) {
@@ -70,6 +84,9 @@ public:
     DeviceType _device{};
 
 private:
+    // eModbus callbacks receive only a 32-bit token. A heap-owned context
+    // carries the request range and owning client across asynchronous calls;
+    // whichever terminal callback runs is responsible for freeing it.
     struct RequestContext {
         Client* owner;
         uint16_t block_index;
@@ -78,6 +95,10 @@ private:
         uint32_t transaction;
     };
 
+    // Transfer context ownership only after the transport accepts the
+    // request. A synchronous enqueue failure destroys it locally. Every
+    // accepted request must eventually produce exactly one terminal callback
+    // (or be explicitly cancelled) to avoid leaking its context.
     bool submit(uint16_t block, uint16_t address, uint16_t count) {
 #if defined(ARDUINO_ARCH_ESP32)
         static_assert(sizeof(void*) == sizeof(uint32_t),
@@ -102,6 +123,8 @@ private:
         context.release(); // callback owns it after a successful enqueue
         return true;
     }
+    // Rebuild unique ownership before touching client state. This callback
+    // must not race destruction of the owning Client or its transport.
     static void handleError(Error error, uint32_t token) {
         std::unique_ptr<RequestContext> ctx(reinterpret_cast<RequestContext*>(static_cast<uintptr_t>(token)));
         if (!ctx) return;
@@ -115,6 +138,9 @@ private:
         Serial.println(buffer);
         self._log.addString(buffer);
     }
+    // Check framing and advertised byte count before accessing the payload.
+    // Decode network-order word bytes, then publish the entire range under
+    // one device lock so readers do not see half-updated 32-bit values.
     static void handleData(ModbusMessage response, uint32_t token) {
         std::unique_ptr<RequestContext> ctx(reinterpret_cast<RequestContext*>(static_cast<uintptr_t>(token)));
         if (!ctx) return;
@@ -149,6 +175,7 @@ private:
     IPAddress _remote;
     uint16_t _tcp_port;
     uint16_t _tcp_server_id;
+    // Shared by callbacks and application-side DataAccess guards.
     mutable std::timed_mutex _Mutex;
 };
 } // namespace modbus_gateway
