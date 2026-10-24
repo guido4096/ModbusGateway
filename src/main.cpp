@@ -98,7 +98,7 @@ modbus_gateway::Server<modbus_gateway::WattNode> wattnode(rtu, RTU_SERVER_ID, SE
 
 // TCP Optimizer Slave
 ModbusServerTCPasync tcp_server; //(theClient, 10);
-modbus_gateway::Server<modbus_gateway::Optimizer> optimizer(tcp_server, 3, SERIAL_NUMBER);
+modbus_gateway::Server<modbus_gateway::Optimizer> optimizer(tcp_server, 3);
 
 // Converter mapping
 modbus_gateway::ConvertEM24_E1ToWattNode converter(meter, wattnode, optimizer, solaredge, alfen);
@@ -222,44 +222,63 @@ void handleStatistics()
 
 void handleOptimizer0()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
-    o.setInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy, 0);
+    modbus_gateway::DataAccess<
+        modbus_gateway::Server<modbus_gateway::Optimizer>
+    > o(optimizer);
+
+    o.set<modbus_gateway::Optimizer::optimizer_strategy>(0);
+
     preferences.putInt("opt_strat", 0);
+
     String r = "OK\n" + o.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
 void handleOptimizer1()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
-    o.setInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy, 1);
+    modbus_gateway::DataAccess<
+        modbus_gateway::Server<modbus_gateway::Optimizer>
+    > o(optimizer);
+
+    o.set<modbus_gateway::Optimizer::optimizer_strategy>(1);
+
     preferences.putInt("opt_strat", 1);
+
     String r = "OK\n" + o.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
+
 void handleOptimizer2()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
-    o.setInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy, 2);
+    modbus_gateway::DataAccess<
+        modbus_gateway::Server<modbus_gateway::Optimizer>
+    > o(optimizer);
+
+    o.set<modbus_gateway::Optimizer::optimizer_strategy>(2);
+
     preferences.putInt("opt_strat", 2);
+
     String r = "OK\n" + o.allValuesAsString();
     server.send(200, "text/plain", r.c_str());
 }
 
 void handleDescription()
 {
+    using namespace modbus_gateway;
+
     String r;
-    r += wattnode._device._dd.GetDescriptions();
-    r += meter._device._dd.GetDescriptions();
-    r += alfen._device._dd.GetDescriptions();
-    r += solaredge._device._dd.GetDescriptions();
-    r += optimizer._device._dd.GetDescriptions();
+    r += getDeviceDescription<WattNode>();
+    r += getDeviceDescription<EM24_E1>();
+    r += getDeviceDescription<Alfen>();
+    r += getDeviceDescription<SolarEdge>();
+    r += getDeviceDescription<Optimizer>();
+
     server.send(200, "text/plain", r.c_str());
 }
 
 void handleStatus()
 {
     modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
-    uint32_t optimizer_status = o.getInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy);
+    uint32_t optimizer_status = o.get<modbus_gateway::Optimizer::optimizer_strategy>();
     String r = "{\"circuit\": " + String(optimizer_status) + " }";
     server.send(200, "application/json", r.c_str());
 }
@@ -434,7 +453,7 @@ void setup()
     modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
     bool b = tcp_server.start(504, 4, 100);
     int32_t optStrat = preferences.getInt("opt_strat", 0);
-    o.setInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy, optStrat);
+    o.set<modbus_gateway::Optimizer::e_registers::optimizer_strategy>(optStrat);
     char buffer[200];
     sprintf(buffer, "Starting Strategy: %i", optStrat);
     o.logMessage(buffer);
@@ -452,8 +471,8 @@ void setup()
     rtu.begin(Serial485);
 
     // Print the setup of the modbus devices
-    Serial.print(wattnode._device._dd.GetDescriptions());
-    Serial.print(meter._device._dd.GetDescriptions());
+    Serial.print(modbus_gateway::getDeviceDescription<modbus_gateway::WattNode>());
+    Serial.print(modbus_gateway::getDeviceDescription<modbus_gateway::EM24_E1>());
 
     // OTA
     ArduinoOTA.setHostname(DEVICENAME);
@@ -522,7 +541,7 @@ void loop()
         int optStrategy = 0;
         { // Keep scope as small as possible
             modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
-            optStrategy = o.getInt32Value(modbus_gateway::Optimizer::e_registers::optimizer_strategy);
+            optStrategy = o.get<modbus_gateway::Optimizer::e_registers::optimizer_strategy>();
         }
         if (optStrategy == 1) // SolarEdge values are only needed for optimizer strategy 1
         {
@@ -550,3 +569,50 @@ void loop()
         // delay(10);
     }
 }
+
+/*
+
+void loop()
+{
+    // check for updates
+    ArduinoOTA.handle();
+
+    // Handle HTTP requests
+    server.handleClient();
+}
+void setup()
+{
+
+    // begin preferences
+    preferences.begin("modbusgateway", false);
+
+    Serial.begin(115200);
+    WiFi.onEvent(WiFiEvent);
+
+#ifdef ETH_POWER_PIN
+    pinMode(ETH_POWER_PIN, OUTPUT);
+    digitalWrite(ETH_POWER_PIN, HIGH);
+#endif
+
+    // Setup the ETHERNET device
+    if (!ETH.begin(ETH_ADDR, ETH_PHY_POWER, ETH_MDC_PIN,
+                   ETH_MDIO_PIN, ETH_TYPE, ETH_CLK_MODE))
+    {
+        Serial.println("ETH start Failed!");
+    }
+
+    while (!eth_connected)
+    {
+        Serial.println("Wait for network connect ...");
+        delay(500);
+    }
+
+    // Init and get the time
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+
+    if (MDNS.begin(DEVICENAME))
+    {
+        Serial.println("MDNS responder started");
+    }
+}
+    */

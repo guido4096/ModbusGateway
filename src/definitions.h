@@ -6,14 +6,20 @@
  * @date      04-Mar-2025
  * @note      Definitions to support formalization modbus register definitions
  */
+// Compile-time schema migration: metadata is constexpr; device values remain runtime state.
 #pragma once
-
 #include <Arduino.h>
+#include <array>
+#include <initializer_list>
+#include <cstdint>
+#include <cstddef>
+#include <cstring>
+#include <tuple>
+#include <type_traits>
 #include <vector>
 #include <time.h>
 
-namespace modbus_gateway
-{
+namespace modbus_gateway {
     // Lightweight, lock-free statistics counters used by both the Server::Process
     // method and the Client::readFromMeter method. Counters are plain integer
     // increments so the cost per request is a few CPU cycles. Rates (per second)
@@ -172,760 +178,378 @@ namespace modbus_gateway
         int _current;
         std::vector<String> _log;
     };
-    enum DataType
-    {
-        float32,
-        int16,
-        uint16,
-        int32,
-        uint32
-    };
 
-    enum Scaling
-    {
-        none = 1,
-        ten = 10,
-        hundred = 100,
-        thousand = 1000
-    };
-    static uint16_t getScaling(Scaling s)
-    {
-        switch (s)
-        {
-        case none:
-            return 1;
-        case ten:
-            return 10;
-        case hundred:
-            return 100;
-        case thousand:
-            return 1000;
-        }
-        return 0;
-    }
-    static uint16_t getLogScaling(Scaling s)
-    {
-        switch (s)
-        {
-        case none:
-            return 0;
-        case ten:
-            return 1;
-        case hundred:
-            return 2;
-        case thousand:
-            return 3;
-        }
-        return 0;
-    }
-    static uint16_t numberRegisters(DataType d)
-    {
-        switch (d)
-        {
-        case float32:
-            return 2;
-        case int16:
-            return 1;
-        case uint16:
-            return 1;
-        case int32:
-            return 2;
-        case uint32:
-            return 2;
-        }
-        return 0;
-    }
-    union Value
-    {
-        static Value _uint32_t(uint32_t v)
-        {
-            Value r;
-            r.ui32 = v;
-            return r;
-        }
-        static Value _int32_t(int32_t v)
-        {
-            Value r;
-            r.i32 = v;
-            return r;
-        }
-        static Value _int16_t(int16_t v)
-        {
-            Value r;
-            r.i16 = v;
-            return r;
-        }
-        static Value _uint16_t(uint16_t v)
-        {
-            Value r;
-            r.ui16 = v;
-            return r;
-        }
-        static Value _float32_t(float v)
-        {
-            Value r;
-            r.f32 = v;
-            return r;
-        }
-        struct
-        {
-            uint8_t b1;
-            uint8_t b2;
-            uint8_t b3;
-            uint8_t b4;
-        };
-        struct
-        {
-            uint16_t w1;
-            uint16_t w2;
-        };
-        struct
-        {
-            uint16_t w;
-        };
-        struct
-        {
-            float f32;
-        };
-        struct
-        {
-            uint16_t ui16;
-        };
-        struct
-        {
-            int16_t i16;
-        };
-        struct
-        {
-            uint32_t ui32;
-        };
-        struct
-        {
-            int32_t i32;
-        };
-    };
-
-    // RegisterReference. Avoid searching by string and instead use indexing
-    struct RegisterReference
-    {
-        String _desc;
-        int32_t _block_idx;
-        int32_t _register_idx;
-    };
-
-    // Register and Block Defintion
-    template <typename MODBUS_TYPE>
-    struct RegisterDefinition
-    {
-        using RegisterType = typename MODBUS_TYPE::e_registers;
-        const RegisterType _register;
-        const DataType _dataType;
-        const String _desc;
-        const String _unit;
-        const Scaling _scaling;
-        const Value _default;
-        const bool _wordorder;
-    };
-    template <typename MODBUS_TYPE>
-    struct BlockDefinition
-    {
-        const String _name;
-        const uint16_t _offset;
-        const std::vector<RegisterDefinition<MODBUS_TYPE>> _rd;
-    };
-
-    class RegisterDescription
-    {
-    public:
-        String toString(const uint16_t *r) const
-        {
-            String result = "unknown";
-            char buf[40] = {0};
-            Value v;
-            switch (_dataType)
-            {
-            case float32:
-                if (_wordorder)
-                {
-                    v.w1 = r[0];
-                    v.w2 = r[1];
-                }
-                else
-                {
-                    v.w2 = r[0];
-                    v.w1 = r[1];
-                }
-                sprintf(buf, "%.1f", v.f32 / getScaling(_scaling));
-                result = buf;
-                break;
-            case int16:
-                v.w1 = r[0];
-                if (_scaling == none)
-                    sprintf(buf, "%i", v.i16);
-                else
-                    sprintf(buf, "%.*f", getLogScaling(_scaling), float(v.i16) / getScaling(_scaling));
-                result = buf;
-                break;
-            case uint16:
-                v.w1 = r[0];
-                if (_scaling == none)
-                    sprintf(buf, "%u", v.ui16);
-                else
-                    sprintf(buf, "%.*f", getLogScaling(_scaling), float(v.ui16) / getScaling(_scaling));
-                result = buf;
-                break;
-            case int32:
-                v.w1 = r[0];
-                v.w2 = r[1];
-                if (_scaling == none)
-                    sprintf(buf, "%i", v.i32);
-                else
-                    sprintf(buf, "%.*f", getLogScaling(_scaling), float(v.i32) / getScaling(_scaling));
-                result = buf;
-                break;
-            case uint32:
-                v.w1 = r[0];
-                v.w2 = r[1];
-                if (_scaling == none)
-                    sprintf(buf, "%u", v.ui32);
-                else
-                    sprintf(buf, "%.*f", getLogScaling(_scaling), float(v.ui32) / getScaling(_scaling));
-                result = buf;
-                break;
-            }
-
-            return result;
-        }
-        float toFloat32(const uint16_t *r) const
-        {
-            float result = 0;
-            Value v;
-            switch (_dataType)
-            {
-            case float32:
-                if (_wordorder)
-                {
-                    v.w1 = r[0];
-                    v.w2 = r[1];
-                }
-                else
-                {
-                    v.w2 = r[0];
-                    v.w1 = r[1];
-                }
-                result = round(float(v.f32) * getScaling(_scaling)) / getScaling(_scaling);
-                break;
-            case int16:
-                v.w1 = r[0];
-                result = round(float(v.i16) * getScaling(_scaling)) / getScaling(_scaling);
-                break;
-            case uint16:
-                v.w1 = r[0];
-                result = round(float(v.ui16) * getScaling(_scaling)) / getScaling(_scaling);
-                break;
-            case int32:
-                v.w1 = r[0];
-                v.w2 = r[1];
-                result = round(float(v.i32) * getScaling(_scaling)) / getScaling(_scaling);
-                break;
-            case uint32:
-                v.w1 = r[0];
-                v.w2 = r[1];
-                result = round(float(v.ui32) * getScaling(_scaling)) / getScaling(_scaling);
-                break;
-            }
-            return result;
-        }
-        int16_t toInt16(const uint16_t *r) const
-        {
-            int16_t result = 0;
-            switch (_dataType)
-            {
-            case int16:
-                result = r[0];
-                break;
-            case uint16:
-                result = r[0];
-                break;
-            }
-            return result;
-        }
-        int32_t toInt32(const uint16_t *r) const
-        {
-            Value v;
-            v.i32 = 0;
-            switch (_dataType)
-            {
-            case int32:
-                if (_wordorder)
-                {
-                    v.w1 = r[0];
-                    v.w2 = r[1];
-                }
-                else
-                {
-                    v.w1 = r[1];
-                    v.w2 = r[0];
-                }
-                break;
-            }
-            return v.i32;
-        }
-        const uint16_t _offset;
-        const uint16_t _blockNbr;
-        const uint8_t _number;
-        const DataType _dataType;
-        const String _desc;
-        const String _unit;
-        const Scaling _scaling;
-        const Value _default;
-        const bool _wordorder; // True: order is high word, low word. False is the reverse
-
-    private:
-        template <typename MODBUS_TYPE>
-        friend class DeviceDescription;
-        RegisterDescription(uint16_t offset, uint16_t blockNbr, uint8_t number, DataType r_type, String desc, String unit, Scaling scaling, Value d, bool wordorder)
-            : _offset(offset), _blockNbr(blockNbr), _number(number), _dataType(r_type), _desc(desc), _unit(unit), _scaling(scaling), _default(d), _wordorder(wordorder)
-        {
-        }
-    };
-
-    // Block
-    class BlockDescription
-    {
-    public:
-        ~BlockDescription() {}
-
-        const String _name;
-        const std::vector<RegisterDescription> _rds;
-        const uint16_t _offset = 0;
-        const uint16_t _number_reg = 0;
-
-    private:
-        template <typename MODBUS_TYPE>
-        friend class DeviceDescription;
-        BlockDescription(const String &name, const std::vector<RegisterDescription> &rds, uint16_t offset, uint16_t number_reg)
-            : _name(name), _rds(rds), _offset(offset), _number_reg(number_reg)
-        {
-        }
-    };
-
-    // Full description of the blocks and registers of a device, with a check that the registers in a block are contiguous
-    template <typename MODBUS_TYPE>
-    class DeviceDescription
-    {
-    public:
-        using RegisterType = typename MODBUS_TYPE::e_registers;
-        static DeviceDescription makeDD(const char *name, const std::vector<BlockDefinition<MODBUS_TYPE>> &blocks)
-        {
-            // The enum (in the device header) and the table (passed in here) are
-            // written independently. Check up front that they describe exactly
-            // the same registers, so any drift is reported instead of silently
-            // producing wrong register offsets. The problems are collected so
-            // they can be included in the device description.
-            String problemReport = reportRegisterTableProblems(name, blocks);
-  
-            std::vector<BlockDescription> bl;
-            std::vector<RegisterReference> rr;
-            rr.resize(RegisterType::last);
-
-            uint16_t blockNbr = 0;
-            for (auto i = blocks.begin(); i < blocks.end(); i++)
-            {
-                BlockDescription b = makeBlock(i->_name, blockNbr, i->_offset, i->_rd, rr);
-                blockNbr++;
-                bl.push_back(b);
-            }
-            return DeviceDescription(name, bl, rr, problemReport);
-        }
-
-        // Get a description of the device
-        String GetDescriptions() const
-        {
-            String result;
-            char buf[200];
-            sprintf(buf, "Device: %s\r\n", _name.c_str());
-            result += buf;
-            // Report the problems found between the register enum and the
-            // block table. Always state the outcome explicitly, also when
-            // there is nothing wrong.
-            if (_problems.length() > 0)
-                result += _problems;
-            else
-                result += "  No problems detected in the device description\r\n";
-            for (auto i = _bds.begin(); i < _bds.end(); i++)
-            {
-                sprintf(buf, "  Block: %s, offset=0x%04x (%06u), numreg=%i\r\n", i->_name.c_str(), i->_offset, i->_offset, i->_number_reg);
-                result += buf;
-                for (auto j = i->_rds.begin(); j < i->_rds.end(); j++)
-                {
-                    sprintf(buf, "    Register 0x%04x (%06u): %s\r\n", j->_offset, j->_offset, j->_desc.c_str());
-                    result += buf;
-                }
-                sprintf(buf, "\r\n");
-                result += buf;
-            }
-            return result;
-        }
-
-        const String _name;
-        const std::vector<BlockDescription> _bds;
-        const std::vector<RegisterReference> _rr;
-        const String _problems;
-
-    private:
-        DeviceDescription(const char *name, const std::vector<BlockDescription> &bds, std::vector<RegisterReference> rr, const String &problems = String()) : _bds(bds), _name(name), _rr(rr), _problems(problems) {}
-        static BlockDescription makeBlock(const String &name, uint16_t blockNbr, uint16_t offset, const std::vector<RegisterDefinition<MODBUS_TYPE>> &registers, std::vector<RegisterReference> &rr)
-        {
-            std::vector<RegisterDescription> rl;
-            int number = 0;
-
-            uint16_t r_offset = offset;
-            for (auto i = registers.begin(); i < registers.end(); i++)
-            {
-                rr[int32_t(i->_register)] = RegisterReference{i->_desc, blockNbr, i - registers.begin()};
-                RegisterDescription r(r_offset, blockNbr, numberRegisters(i->_dataType), i->_dataType, i->_desc, i->_unit, i->_scaling, i->_default, i->_wordorder);
-                rl.push_back(r);
-                number += numberRegisters(i->_dataType);
-                r_offset += numberRegisters(i->_dataType);
-            }
-
-            return BlockDescription(name, rl, offset, number);
-        }
-
-        // Reports the registers that do not line up between the enum and the
-        // block table: every enum value below `last` must appear exactly once
-        // in the table, and no other value may appear. Called once from makeDD.
-        // The problems are returned as a string so that they can be included
-        // in the device description, and are printed to the serial port as well.
-        static String reportRegisterTableProblems(const char *name, const std::vector<BlockDefinition<MODBUS_TYPE>> &blocks)
-        {
-            String result;
-            char buf[200];
-            std::vector<int> seen(RegisterType::last, 0);
-            for (auto b = blocks.begin(); b < blocks.end(); b++)
-            {
-                for (auto r = b->_rd.begin(); r < b->_rd.end(); r++)
-                {
-                    int idx = int32_t(r->_register);
-                    if (idx < 0 || idx >= RegisterType::last)
-                    {
-                        sprintf(buf, "device '%s': register value %i is out of range (0..%i)\r\n",
-                                name, idx, (int)RegisterType::last - 1);
-                        Serial.print(buf);
-                        result += buf;
-                        continue;
-                    }
-                    seen[idx]++;
-                }
-            }
-
-            for (int idx = 0; idx < (int)RegisterType::last; idx++)
-            {
-                if (seen[idx] == 0)
-                    sprintf(buf, "device '%s': register value %i is declared in the enum but missing from the table\r\n",
-                            name, idx);
-                else if (seen[idx] > 1)
-                    sprintf(buf, "device '%s': register value %i appears %i times in the table\r\n",
-                            name, idx, seen[idx]);
-                else
-                    continue;
-                Serial.print(buf);
-                result += buf;
-            }
-            return result;
-        }
-    };
-
-    // Block. This contains values for a block.
-    class Block
-    {
-    public:
-        Block(const BlockDescription &bd, int32_t _number_reg) : _bd(bd), _transaction(0) { _registers.resize(_number_reg); }
-
-        const BlockDescription &_bd;
-
-    private:
-        String allValuesAsString() const
-        {
-            String result;
-            char buf[200] = {0};
-
-            // Transaction id
-            sprintf(buf, "TransactionID=%i\r\n", _transaction);
-            result += buf;
-            sprintf(buf, "Block %s\r\n", _bd._name.c_str());
-            result += buf;
-
-            for (auto i = _bd._rds.begin(); i < _bd._rds.end(); i++)
-            {
-                String value = i->toString(&(_registers[i->_offset - _bd._offset]));
-                sprintf(buf, "  %s=%s %s\n", i->_desc.c_str(), value.c_str(), i->_unit.c_str());
-                result += buf;
-            }
-            return result;
-        }
-        float getFloatValue(const RegisterDescription &r) const
-        {
-            return r.toFloat32(&(_registers[r._offset - _bd._offset])) / getScaling(r._scaling);
-        }
-        int16_t getInt16Value(const RegisterDescription &r) const
-        {
-            return r.toInt16(&(_registers[r._offset - _bd._offset])) / getScaling(r._scaling);
-        }
-        int32_t getInt32Value(const RegisterDescription &r) const
-        {
-            return r.toInt32(&(_registers[r._offset - _bd._offset])) / getScaling(r._scaling);
-        }
-        float getFloatValue(const RegisterReference &rr) const
-        {
-            const RegisterDescription &r = _bd._rds[rr._register_idx];
-            return getFloatValue(r);
-        }
-        int16_t getInt16Value(const RegisterReference &rr) const
-        {
-            const RegisterDescription &r = _bd._rds[rr._register_idx];
-            return getInt16Value(r);
-        }
-        int32_t getInt32Value(const RegisterReference &rr) const
-        {
-            const RegisterDescription &r = _bd._rds[rr._register_idx];
-            return getInt32Value(r);
-        }
-        void setFloatValue(const RegisterReference &rr, float f)
-        {
-            const RegisterDescription &r = _bd._rds[rr._register_idx];
-            Value v = Value::_float32_t(f);
-            _registers[r._offset - _bd._offset] = v.w1;
-            _registers[r._offset - _bd._offset + 1] = v.w2;
-        }
-        void setInt32Value(const RegisterReference &rr, int32_t f)
-        {
-            const RegisterDescription &r = _bd._rds[rr._register_idx];
-            Value v = Value::_int32_t(f);
-            if (r._wordorder)
-            {
-                _registers[r._offset - _bd._offset] = v.w1;
-                _registers[r._offset - _bd._offset + 1] = v.w2;
-            }
-            else
-            {
-                _registers[r._offset - _bd._offset] = v.w2;
-                _registers[r._offset - _bd._offset + 1] = v.w1;
-            }
-        }
-        template <typename T>
-        friend class Device;
-
-        std::vector<uint16_t> _registers;
-        uint16_t _transaction;
-    };
-
-    template <typename MODBUS_TYPE>
-    class Device
-    {
-    public:
-        using RegisterType = typename MODBUS_TYPE::e_registers;
-        Device(const DeviceDescription<MODBUS_TYPE> &dd) : _dd(dd)
-        {
-            for (auto i = _dd._bds.begin(); i < _dd._bds.end(); i++)
-            {
-                Block b(*i, i->_number_reg);
-                modbus_gateway::Value v;
-                for (auto j = i->_rds.begin(); j < i->_rds.end(); j++)
-                {
-                    switch (j->_number)
-                    {
-                    case 1:
-                        b._registers[j->_offset - i->_offset] = j->_default.w;
-                        break;
-                    case 2:
-                        b._registers[j->_offset - i->_offset] = j->_default.w1;
-                        b._registers[j->_offset - i->_offset + 1] = j->_default.w2;
-                        break;
-                    }
-                }
-                _blocks.push_back(b);
-            }
-        }
-        uint32_t GetBlockIndex(const String &name) const
-        {
-            for (auto i = _dd._bds.begin(); i < _dd._bds.end(); i++)
-            {
-                if (i->_name == name)
-                    return i - _dd._bds.begin();
-            }
-            return -1;
-        }
-        const DeviceDescription<MODBUS_TYPE> &_dd;
-
-    private:
-        // Plain uint16_t values access
-        void setRegisterValue(uint32_t block_idx, uint32_t val_index, uint16_t val)
-        {
-            _blocks[block_idx]._registers[val_index] = val;
-        }
-        uint16_t getRegisterValue(uint32_t block_idx, uint32_t val_index)
-        {
-            return _blocks[block_idx]._registers[val_index];
-        }
-        void setFloatValue(RegisterType r, float i)
-        {
-            RegisterReference rr = _dd._rr[r];
-            if (rr._block_idx >= 0 && rr._register_idx >= 0)
-            {
-                _blocks[rr._block_idx].setFloatValue(rr, i);
-                // Serial.printf("setFloatValue %s %i %i %i %i=%f\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx, r._blockNbr, r._offset, i);
-            }
-            else
-            {
-                Serial.printf("modbus_gateway::ConvertEM24ToWattNode::setFloatValue invalid reference for register %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
-            }
-        }
-        float getFloatValue(RegisterType r)
-        {
-            RegisterReference rr = _dd._rr[r];
-            if (rr._block_idx >= 0 && rr._register_idx >= 0)
-            {
-                return _blocks[rr._block_idx].getFloatValue(rr);
-            }
-            reportInvalidReference(rr);
-            return 0;
-        }
-        float getInt16Value(RegisterType r)
-        {
-            RegisterReference rr = _dd._rr[r];
-            if (rr._block_idx >= 0 && rr._register_idx >= 0)
-            {
-                return _blocks[rr._block_idx].getInt16Value(rr);
-            }
-            reportInvalidReference(rr);
-            return 0;
-        }
-
-        uint32_t getInt32Value(RegisterType r)
-        {
-            RegisterReference rr = _dd._rr[r];
-            if (rr._block_idx >= 0 && rr._register_idx >= 0)
-            {
-                return _blocks[rr._block_idx].getInt32Value(rr);
-            }
-            reportInvalidReference(rr);
-            return 0;
-        }
-        void setInt32Value(RegisterType r, uint32_t i)
-        {
-            RegisterReference rr = _dd._rr[r];
-            if (rr._block_idx >= 0 && rr._register_idx >= 0)
-            {
-                _blocks[rr._block_idx].setInt32Value(rr, i);
-            }
-            else
-            {
-                reportInvalidReference(rr);
-            }
-        }
-        void setTransaction(uint32_t block_idx, uint32_t t)
-        {
-            _blocks[block_idx]._transaction = t;
-        }
-
-        // Shared error message for when a register has no valid block/index mapping
-        void reportInvalidReference(const RegisterReference &rr) const
-        {
-            Serial.printf("Can't find value %s %i %i\r\n", rr._desc.c_str(), rr._block_idx, rr._register_idx);
-        }
-
-        String allValuesAsString() const
-        {
-            String r = "";
-            for (auto i = _blocks.begin(); i < _blocks.end(); i++)
-                r += i->allValuesAsString();
-            return r;
-        }
-        template <typename T>
-        friend class DataAccess;
-        std::vector<Block> _blocks;
-    };
-
-    // You should only access data through DataAccess. DataAccess takes care of
-    // Thread-Safety by locking and unlocking the mutex when it comes in and out of scope
-    // Instantiate this class to modify or retrieve values, but do not keep it around
-    // as it locks the mutex for thread synchronization
-    template <typename MODBUS_TYPE>
-    class DataAccess
-    {
-    public:
-        using RegisterType = typename MODBUS_TYPE::RegisterType;
-        DataAccess(MODBUS_TYPE &s) : _s(s)
-        {
-            _s._Mutex.lock();
-        }
-        ~DataAccess()
-        {
-            _s._Mutex.unlock();
-        }
-        DataAccess &operator=(const DataAccess &) = delete;
-        DataAccess(const DataAccess &) = delete;
-        DataAccess() = delete;
-
-        // Plain uint16_t values access
-        void setRegisterValue(uint32_t block_idx, uint32_t val_index, uint16_t val)
-        {
-            _s._device.setRegisterValue(block_idx, val_index, val);
-        }
-        uint16_t getRegisterValue(uint32_t block_idx, uint32_t val_index)
-        {
-            return _s._device.getRegisterValue(block_idx, val_index);
-        }
-
-        void setTransaction(uint32_t block_idx, uint32_t t)
-        {
-            _s._device.setTransaction(block_idx, t);
-        }
-
-        String allValuesAsString() const
-        {
-            return _s._device.allValuesAsString();
-        }
-
-        void setFloatValue(RegisterType r, float i)
-        {
-            _s._device.setFloatValue(r, i);
-        }
-        float getFloatValue(RegisterType r)
-        {
-            return _s._device.getFloatValue(r);
-        }
-        float getInt16Value(RegisterType r)
-        {
-            return _s._device.getInt16Value(r);
-        }
-        void setInt32Value(RegisterType r, int32_t i)
-        {
-            _s._device.setInt32Value(r, i);
-        }
-        int32_t getInt32Value(RegisterType r)
-        {
-            return _s._device.getInt32Value(r);
-        }
-        String getLog()
-        {
-            return _s._log.allValuesAsString();
-        }
-
-        String getStatistics()
-        {
-            return _s._statistics.allValuesAsString();
-        }
-
-        void logMessage(String m)
-        {
-            _s._log.addString(m);
-        }
-
-    private:
-        MODBUS_TYPE &_s;
-    };
-
+enum class DataType : uint8_t { float32, int16, uint16, int32, uint32 };
+enum class Scaling : uint16_t { none=1, ten=10, hundred=100, thousand=1000 };
+constexpr uint16_t getScaling(Scaling s) { return static_cast<uint16_t>(s); }
+constexpr uint8_t numberRegisters(DataType d) {
+    return (d == DataType::int16 || d == DataType::uint16) ? 1 : 2;
 }
+constexpr unsigned fractionalDigits(Scaling s) {
+    return s == Scaling::ten ? 1 : s == Scaling::hundred ? 2 : s == Scaling::thousand ? 3 : 0;
+}
+
+template<DataType T> struct Native;
+template<> struct Native<DataType::float32> { using type = float; };
+template<> struct Native<DataType::int16> { using type = int16_t; };
+template<> struct Native<DataType::uint16> { using type = uint16_t; };
+template<> struct Native<DataType::int32> { using type = int32_t; };
+template<> struct Native<DataType::uint32> { using type = uint32_t; };
+
+struct RegisterDescription {
+    uint16_t address;
+    uint16_t block;
+    uint16_t word_offset;      // within the block
+    uint16_t storage_offset;   // within the device's flat word storage
+    uint8_t words;
+    DataType type;
+    Scaling scaling;
+    bool high_word_first;
+    const char* name;
+    const char* unit;
+    uint32_t default_bits;     // raw IEEE754/int bits; dynamic defaults set per instance
+};
+struct BlockDescription {
+    const char* name;
+    uint16_t address;
+    uint16_t words;
+    uint16_t storage_offset;
+};
+
+// Small metadata records live in flash/read-only storage; buffers live in the Device.
+// No lookup loops are used when a register is identified by its enum value.
+template<typename Id, std::size_t N, std::size_t B, std::size_t Words>
+struct StaticDescription {
+    std::array<RegisterDescription, N> registers{};
+    std::array<BlockDescription, B> blocks{};
+    bool valid = true;
+};
+
+
+// Compact nested initializer specification. Temporary initializer_list objects
+// are consumed entirely within constant evaluation: no runtime allocation.
+template<typename Id>
+struct FieldSpec {
+    Id id;
+    DataType type;
+    Scaling scaling;
+    bool high_word_first;
+    const char* name;
+    const char* unit;
+    uint32_t default_bits;
+};
+template<typename Id>
+struct BlockSpec {
+    const char* name;
+    uint16_t address;
+    std::initializer_list<FieldSpec<Id>> fields;
+};
+
+template<typename Id, std::size_t N, std::size_t B, std::size_t Words>
+constexpr StaticDescription<Id,N,B,Words>
+buildMetadata(std::initializer_list<BlockSpec<Id>> blocks) {
+    StaticDescription<Id,N,B,Words> m{};
+    std::array<bool,N> assigned{};
+    std::size_t blockNo = 0, storage = 0;
+    for (const auto& block : blocks) {
+        if (blockNo >= B) { m.valid=false; break; }
+        uint32_t offset = 0;
+        for (const auto& f : block.fields) {
+            const auto id = static_cast<std::size_t>(f.id);
+            const uint32_t width = numberRegisters(f.type);
+            if (id >= N || width == 0 || assigned[id] ||
+                uint32_t(block.address)+offset+width > 65536 ||
+                storage+offset+width > Words) {
+                m.valid=false;
+                continue;
+            }
+            assigned[id] = true;
+            m.registers[id] = RegisterDescription{
+                static_cast<uint16_t>(uint32_t(block.address)+offset),
+                static_cast<uint16_t>(blockNo),
+                static_cast<uint16_t>(offset),
+                static_cast<uint16_t>(storage+offset),
+                static_cast<uint8_t>(width), f.type, f.scaling,
+                f.high_word_first, f.name, f.unit, f.default_bits
+            };
+            offset += width;
+        }
+        m.blocks[blockNo] = BlockDescription{
+            block.name, block.address, static_cast<uint16_t>(offset),
+            static_cast<uint16_t>(storage)
+        };
+        storage += offset;
+        ++blockNo;
+    }
+    if (blockNo != B || storage != Words) m.valid = false;
+    for (auto present : assigned) if (!present) m.valid = false;
+    for (std::size_t i=0; i<blockNo; ++i)
+        for (std::size_t j=i+1; j<blockNo; ++j) {
+            const auto& a=m.blocks[i]; const auto& b=m.blocks[j];
+            if (uint32_t(a.address)<uint32_t(b.address)+b.words &&
+                uint32_t(b.address)<uint32_t(a.address)+a.words)
+                m.valid=false;
+        }
+    return m;
+}
+
+// DeviceSpec is specialized by each concrete device. The constexpr construction
+// in wattnode.h is the single source of truth for both metadata and indexing.
+inline uint32_t toBits(float x) {
+    static_assert(sizeof(float)==4, "IEEE754 float32 required");
+    uint32_t bits; std::memcpy(&bits, &x, 4); return bits;
+}
+inline float fromBits(uint32_t bits) {
+    float value; std::memcpy(&value, &bits, 4); return value;
+}
+inline uint32_t loadBits(const uint16_t* words, uint8_t count, bool highFirst) {
+    if (count == 1) return words[0];
+    return highFirst ? (uint32_t(words[0]) << 16) | words[1]
+                     : (uint32_t(words[1]) << 16) | words[0];
+}
+inline void storeBits(uint16_t* words, uint8_t count, bool highFirst, uint32_t bits) {
+    if (count == 1) { words[0] = uint16_t(bits); return; }
+    uint16_t hi = uint16_t(bits >> 16), lo = uint16_t(bits);
+    words[0] = highFirst ? hi : lo;
+    words[1] = highFirst ? lo : hi;
+}
+
+template<typename T>
+T decode(const uint16_t* data, const RegisterDescription& r) {
+    uint32_t bits = loadBits(data, r.words, r.high_word_first);
+    if constexpr (std::is_same_v<T,float>) {
+        float raw = r.type == DataType::float32 ? fromBits(bits) :
+                    r.type == DataType::int16 ? float(int16_t(uint16_t(bits))) :
+                    r.type == DataType::uint16 ? float(uint16_t(bits)) :
+                    r.type == DataType::int32 ? float(int32_t(bits)) : float(bits);
+        return raw / getScaling(r.scaling);
+    } else {
+        // Exact integral access only; typed callers select the declared type.
+        if constexpr (std::is_same_v<T,int16_t>) return int16_t(uint16_t(bits));
+        else return static_cast<T>(bits);
+    }
+}
+
+template<typename T>
+void encode(uint16_t* data, const RegisterDescription& r, T value) {
+    uint32_t bits = 0;
+    if constexpr (std::is_same_v<T,float>) bits = toBits(value);
+    else bits = static_cast<uint32_t>(value);
+    storeBits(data, r.words, r.high_word_first, bits);
+}
+
+template<typename Schema>
+class Device {
+public:
+    using RegisterType = typename Schema::RegisterId;
+    static constexpr auto& metadata = Schema::metadata;
+    static constexpr std::size_t word_count = Schema::word_count;
+
+    Device() {
+        for (std::size_t i=0; i<metadata.registers.size(); ++i) {
+            const auto& d = metadata.registers[i];
+            storeBits(words_.data()+d.storage_offset, d.words,
+                      d.high_word_first, d.default_bits);
+        }
+    }
+
+    // The protocol server ID is instance state, independent of register layout.
+    void setServerId(uint8_t id) { server_id_ = id; }
+    uint8_t serverId() const { return server_id_; }
+
+    template<RegisterType R>
+    using value_type = typename Native<metadata.registers[static_cast<std::size_t>(R)].type>::type;
+
+    template<RegisterType R>
+    static constexpr const RegisterDescription& description() {
+        constexpr auto i = static_cast<std::size_t>(R);
+        static_assert(i < Schema::register_count, "Register ID out of range");
+        return metadata.registers[i];
+    }
+
+    template<RegisterType R>
+    value_type<R> get() const {
+        constexpr auto& d = description<R>();
+        return decode<value_type<R>>(words_.data()+d.storage_offset, d);
+    }
+
+    template<RegisterType R>
+    void set(value_type<R> v) {
+        constexpr auto& d = description<R>();
+        encode(words_.data()+d.storage_offset, d, v);
+    }
+
+    // Runtime ID lookup also O(1), with bounds checked once.
+    static const RegisterDescription* describe(RegisterType id) {
+        auto i = static_cast<std::size_t>(id);
+        return i < metadata.registers.size() ? &metadata.registers[i] : nullptr;
+    }
+
+    // Address-based protocol requests traverse blocks (B is typically small).
+    // A request crossing a hole fails, rather than fabricating zeros.
+    bool readHoldingRegisters(uint16_t address, uint16_t count, uint16_t* output) const {
+        if (!output || count == 0 || uint32_t(address)+count > 65536) return false;
+        for (uint32_t n=0; n<count; ++n) {
+            auto pos = findWord(uint32_t(address)+n);
+            if (pos == invalid_position) return false;
+        }
+        for (uint32_t n=0; n<count; ++n)
+            output[n] = words_[findWord(uint32_t(address)+n)];
+        return true;
+    }
+    bool writeHoldingRegisters(uint16_t address, uint16_t count, const uint16_t* input) {
+        if (!input || count == 0 || uint32_t(address)+count > 65536) return false;
+        for (uint32_t n=0; n<count; ++n)
+            if (findWord(uint32_t(address)+n) == invalid_position) return false;
+        for (uint32_t n=0; n<count; ++n)
+            words_[findWord(uint32_t(address)+n)] = input[n];
+        return true;
+    }
+    // Human-readable diagnostic dump, preserving the original HTTP interface.
+    String allValuesAsString() const {
+        String result;
+        char buf[96];
+        for (std::size_t block_index = 0; block_index < metadata.blocks.size(); ++block_index) {
+            const auto& block = metadata.blocks[block_index];
+            result += "Block ";
+            result += block.name;
+            result += "\r\n";
+            for (const auto& r : metadata.registers) {
+                if (r.block != block_index) continue;
+                const uint32_t bits = loadBits(words_.data() + r.storage_offset,
+                                               r.words, r.high_word_first);
+                const double scale = static_cast<double>(getScaling(r.scaling));
+                const int decimals = static_cast<int>(fractionalDigits(r.scaling));
+                switch (r.type) {
+                case DataType::float32:
+                    snprintf(buf, sizeof(buf), "%.1f", static_cast<double>(fromBits(bits)) / scale);
+                    break;
+                case DataType::int16: {
+                    const int16_t v = static_cast<int16_t>(static_cast<uint16_t>(bits));
+                    if (decimals) snprintf(buf, sizeof(buf), "%.*f", decimals, static_cast<double>(v) / scale);
+                    else snprintf(buf, sizeof(buf), "%d", static_cast<int>(v));
+                    break;
+                }
+                case DataType::uint16: {
+                    const uint16_t v = static_cast<uint16_t>(bits);
+                    if (decimals) snprintf(buf, sizeof(buf), "%.*f", decimals, static_cast<double>(v) / scale);
+                    else snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(v));
+                    break;
+                }
+                case DataType::int32: {
+                    int32_t v;
+                    std::memcpy(&v, &bits, sizeof(v));
+                    if (decimals) snprintf(buf, sizeof(buf), "%.*f", decimals, static_cast<double>(v) / scale);
+                    else snprintf(buf, sizeof(buf), "%ld", static_cast<long>(v));
+                    break;
+                }
+                case DataType::uint32:
+                    if (decimals) snprintf(buf, sizeof(buf), "%.*f", decimals, static_cast<double>(bits) / scale);
+                    else snprintf(buf, sizeof(buf), "%lu", static_cast<unsigned long>(bits));
+                    break;
+                }
+                result += "  ";
+                result += r.name;
+                result += "=";
+                result += buf;
+                if (r.unit && *r.unit) {
+                    result += " ";
+                    result += r.unit;
+                }
+                result += "\r\n";
+            }
+        }
+        return result;
+    }
+
+    const uint16_t* rawWords() const { return words_.data(); }
+    static constexpr const auto& blocks() { return metadata.blocks; }
+
+private:
+    static constexpr std::size_t invalid_position = static_cast<std::size_t>(-1);
+    static std::size_t findWord(uint32_t address) {
+        for (const auto& b : metadata.blocks)
+            if (address >= b.address && address < uint32_t(b.address)+b.words)
+                return b.storage_offset + address - b.address;
+        return invalid_position;
+    }
+    std::array<uint16_t, word_count> words_{};
+    uint8_t server_id_ = 0;
+};
+
+// The device name comes from Schema::name. Metadata is constexpr;
+// formatting is performed only when diagnostics are requested.
+// A Stream-like sink needs only print(const char*), as Arduino Print does.
+template<typename Schema, typename Output>
+void printDeviceDescription(Output& output) {
+    const auto& metadata = Schema::metadata;
+    output.print("Device: ");
+    output.print(Schema::name);
+    output.print("\r\n");
+    output.print(metadata.valid
+        ? "  No problems detected in the device description\r\n"
+        : "  INVALID device description\r\n");
+
+    char buf[128];
+    for (std::size_t blockIndex = 0; blockIndex < metadata.blocks.size(); ++blockIndex) {
+        const auto& block = metadata.blocks[blockIndex];
+        snprintf(buf, sizeof(buf), "  Block: %s, offset=0x%04x (%06u), numreg=%u\r\n",
+                 block.name, static_cast<unsigned>(block.address),
+                 static_cast<unsigned>(block.address), static_cast<unsigned>(block.words));
+        output.print(buf);
+        for (const auto& reg : metadata.registers) {
+            if (reg.block != blockIndex) continue;
+            snprintf(buf, sizeof(buf), "    Register 0x%04x (%06u): ",
+                     static_cast<unsigned>(reg.address), static_cast<unsigned>(reg.address));
+            output.print(buf);
+            output.print(reg.name);
+            output.print("\r\n");
+        }
+        output.print("\r\n");
+    }
+}
+
+// Compatibility with HTTP handlers that need a String.
+template<typename Schema>
+String getDeviceDescription() {
+    struct StringOutput {
+        String& value;
+        void print(const char* text) { value += text; }
+    };
+    String result;
+    StringOutput output{result};
+    printDeviceDescription<Schema>(output);
+    return result;
+}
+
+// Optional lock-scoped access. The owner must expose _Mutex and _device.
+template<typename Owner>
+class DataAccess {
+public:
+    using Schema = typename Owner::Schema;
+    using RegisterType = typename Schema::RegisterId;
+    explicit DataAccess(Owner& owner) : owner_(owner) { owner_._Mutex.lock(); }
+    ~DataAccess() { owner_._Mutex.unlock(); }
+    DataAccess(const DataAccess&) = delete;
+    DataAccess& operator=(const DataAccess&) = delete;
+
+    template<RegisterType R>
+    auto get() const { return owner_._device.template get<R>(); }
+    template<RegisterType R>
+    void set(typename Device<Schema>::template value_type<R> v) {
+        owner_._device.template set<R>(v);
+    }
+    String allValuesAsString() const { return owner_._device.allValuesAsString(); }
+    String getStatistics() { return owner_._statistics.allValuesAsString(); }
+    String getLog() { return owner_._log.allValuesAsString(); }
+    void logMessage(const String& message) { owner_._log.addString(message); }
+    bool readHoldingRegisters(uint16_t addr, uint16_t count, uint16_t* dst) const {
+        return owner_._device.readHoldingRegisters(addr,count,dst);
+    }
+    bool writeHoldingRegisters(uint16_t addr, uint16_t count, const uint16_t* src) {
+        return owner_._device.writeHoldingRegisters(addr,count,src);
+    }
+private:
+    Owner& owner_;
+};
+} // namespace modbus_gateway

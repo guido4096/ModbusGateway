@@ -1,5 +1,5 @@
 /**
- * @file      convert_em24_to_wattnode.h
+ * @file      convert_em24_e1_to_wattnode.h
  * @author    Guido Jansen (guido@ngjansen.be)
  * @license   MIT
  * @copyright Copyright (c) 2025 Guido Jansen

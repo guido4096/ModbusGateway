@@ -1,0 +1,13 @@
+void handleDescription() {
+    using namespace modbus_gateway;
+    String result;
+    result += getDeviceDescription<WattNode>();
+    result += getDeviceDescription<EM24_E1>();
+    result += getDeviceDescription<Alfen>();
+    result += getDeviceDescription<SolarEdge>();
+    result += getDeviceDescription<Optimizer>();
+    server.send(200, "text/plain", result.c_str());
+}
+
+// Optional serial diagnostic (without building one large String):
+// printDeviceDescription<WattNode>(Serial);
