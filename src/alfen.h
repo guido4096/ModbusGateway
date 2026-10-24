@@ -48,19 +48,19 @@ struct Alfen : SchemaApi<Alfen> {
         return buildMetadata<RegisterId, register_count, block_count, word_count>({
             // Block dynamic (base 320): addresses within this block are contiguous.
             {"dynamic", 320, {
-                {current_l1, DataType::float32, Scaling::none, false, "Current Phase L1", "A", 0},
-                {current_l2, DataType::float32, Scaling::none, false, "Current Phase L2", "A", 0},
-                {current_l3, DataType::float32, Scaling::none, false, "Current Phase L3", "A", 0},
-                {current_sum, DataType::float32, Scaling::none, false, "Current Sum", "W", 0},
-                {power_factor_l1, DataType::float32, Scaling::none, false, "Power Factor L1", "", 0},
-                {power_factor_l2, DataType::float32, Scaling::none, false, "Power Factor L2", "", 0},
-                {power_factor_l3, DataType::float32, Scaling::none, false, "Power Factor L3", "", 0},
-                {power_factor_sum, DataType::float32, Scaling::none, false, "Power Factor Sum", "", 0},
-                {frequency, DataType::float32, Scaling::none, false, "Frequency", "Hz", 0},
-                {real_power_l1, DataType::float32, Scaling::none, false, "Real Power Phase L1", "W", 0},
-                {real_power_l2, DataType::float32, Scaling::none, false, "Real Power Phase L2", "W", 0},
-                {real_power_l3, DataType::float32, Scaling::none, false, "Real Power Phase L3", "W", 0},
-                {real_power_sum, DataType::float32, Scaling::none, false, "Real Power Sum", "W", 0},
+                {current_l1, DataType::float32, Scaling::none, true, "Current Phase L1", "A", 0},
+                {current_l2, DataType::float32, Scaling::none, true, "Current Phase L2", "A", 0},
+                {current_l3, DataType::float32, Scaling::none, true, "Current Phase L3", "A", 0},
+                {current_sum, DataType::float32, Scaling::none, true, "Current Sum", "W", 0},
+                {power_factor_l1, DataType::float32, Scaling::none, true, "Power Factor L1", "", 0},
+                {power_factor_l2, DataType::float32, Scaling::none, true, "Power Factor L2", "", 0},
+                {power_factor_l3, DataType::float32, Scaling::none, true, "Power Factor L3", "", 0},
+                {power_factor_sum, DataType::float32, Scaling::none, true, "Power Factor Sum", "", 0},
+                {frequency, DataType::float32, Scaling::none, true, "Frequency", "Hz", 0},
+                {real_power_l1, DataType::float32, Scaling::none, true, "Real Power Phase L1", "W", 0},
+                {real_power_l2, DataType::float32, Scaling::none, true, "Real Power Phase L2", "W", 0},
+                {real_power_l3, DataType::float32, Scaling::none, true, "Real Power Phase L3", "W", 0},
+                {real_power_sum, DataType::float32, Scaling::none, true, "Real Power Sum", "W", 0},
             }},
         });
     }

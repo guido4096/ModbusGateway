@@ -12,16 +12,29 @@ int main() {
   w.set<WattNode::power_active>(1.0f);
   uint16_t words[4]{};
   assert(w.readHoldingRegisters(1008,2,words));
-  assert(words[0]==0x3f80 && words[1]==0x0000);
+  assert(words[0]==0x0000 && words[1]==0x3f80);
   assert(w.get<WattNode::power_active>() == 1.0f);
   w.set<WattNode::l1_power_active>(-1234.5f);
   assert(w.readHoldingRegisters(1010,2,words));
-  assert(words[0]==0xc49a && words[1]==0x5000); // IEEE754 -1234.5
+  assert(words[0]==0x5000 && words[1]==0xc49a); // IEEE754 -1234.5
   assert(w.get<WattNode::serial_number>()==0x12345678u);
   auto a = Alfen::makeDevice();
   a.set<Alfen::current_l1>(1.0f);
   assert(a.readHoldingRegisters(320,2,words));
-  assert(words[0]==0x0000 && words[1]==0x3f80);
+  assert(words[0]==0x3f80 && words[1]==0x0000);
+  // Original WattNode Value union writes 32-bit raw defaults low-word first.
+  assert(w.readHoldingRegisters(1700,2,words));
+  assert(words[0]==0x5678 && words[1]==0x1234);
+  // SolarEdge float from original toFloat32(true): LOW word first.
+  auto se = SolarEdge::makeDevice();
+  const uint16_t solarRaw[2]{0x0000,0x3f80};
+  assert(se.writeHoldingRegisters(57716,2,solarRaw));
+  assert(se.get<SolarEdge::b1_instantaneous_power>() == 1.0f);
+  // Optimizer original int32 setter writes low first.
+  auto opt = Optimizer::makeDevice();
+  opt.set<Optimizer::optimizer_strategy>(0x12345678);
+  assert(opt.readHoldingRegisters(0,2,words));
+  assert(words[0]==0x5678 && words[1]==0x1234);
   auto e=EM24_E1::makeDevice();
   const uint16_t raw[2]{0xff9c,0xffff}; // EM24 low-word-first -100 (=> -10 V after /10)
   assert(e.writeHoldingRegisters(0,2,raw));

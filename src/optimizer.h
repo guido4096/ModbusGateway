@@ -36,7 +36,7 @@ struct Optimizer : SchemaApi<Optimizer> {
         return buildMetadata<RegisterId, register_count, block_count, word_count>({
             // Block strategy (base 0x0000): addresses within this block are contiguous.
             {"strategy", 0x0000, {
-                {optimizer_strategy, DataType::int32, Scaling::none, true, "Requested Power From Inverter", "0 1 2", 0},
+                {optimizer_strategy, DataType::int32, Scaling::none, false, "Requested Power From Inverter", "0 1 2", 0},
             }},
         });
     }

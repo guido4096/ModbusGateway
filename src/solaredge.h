@@ -45,7 +45,7 @@ struct SolarEdge : SchemaApi<SolarEdge> {
             }},
             // Block battery (base 57716): addresses within this block are contiguous.
             {"battery", 57716, {
-                {b1_instantaneous_power, DataType::float32, Scaling::none, true, "Battery 1 Instantaneous Power", "W", 0},
+                {b1_instantaneous_power, DataType::float32, Scaling::none, false, "Battery 1 Instantaneous Power", "W", 0},
             }},
             // Block dc (base 40100): addresses within this block are contiguous.
             {"dc", 40100, {
