@@ -6,12 +6,16 @@
  * @date      04-Mar-2025
  * @note      SolarEdge Modbus Definitions
  */
-// Compile-time schema migration: metadata is constexpr; device values remain runtime state.
 #pragma once
 #include "definitions.h"
+
 namespace modbus_gateway {
-struct SolarEdge {
+
+struct SolarEdge : SchemaApi<SolarEdge> {
+    // Device identity used by diagnostics; no runtime name argument is needed.
     static constexpr const char* name = "solaredge";
+    // Logical register IDs, in index order. These are NOT wire addresses.
+    // IDs index metadata.registers[] directly (O(1)); keep names stable.
     enum e_registers {
         ac_power,
         ac_power_sf,
@@ -20,38 +24,26 @@ struct SolarEdge {
         dc_power_sf,
         last
     };
+    // Register layout is the single source of truth. Blocks and total word
+    // storage are counted automatically. All field properties are explicit.
     using RegisterId = e_registers;
-    static constexpr std::size_t register_count = static_cast<std::size_t>(last);
-    static constexpr std::size_t block_count = 3;
-    static constexpr std::size_t word_count = 6;
-    using Metadata = StaticDescription<RegisterId, register_count, block_count, word_count>;
-    static constexpr Metadata makeMetadata() {
-        return buildMetadata<RegisterId, register_count, block_count, word_count>({
-            {"pv", 40083, {
-                {ac_power, DataType::int16, Scaling::none, true, "AC Power", "W", static_cast<uint32_t>(0)},
-                {ac_power_sf, DataType::int16, Scaling::none, true, "AC Power SF", "", static_cast<uint32_t>(0)},
-            }},
-            {"battery", 57716, {
-                {b1_instantaneous_power, DataType::float32, Scaling::none, true, "Battery 1 Instantaneous Power", "W", static_cast<uint32_t>(0)},
-            }},
-            {"dc", 40100, {
-                {dc_power, DataType::int16, Scaling::none, true, "DC Power", "W", static_cast<uint32_t>(0)},
-                {dc_power_sf, DataType::int16, Scaling::none, true, "DC Power SF", "", static_cast<uint32_t>(0)},
-            }},
-        });
-    }
-    static const Metadata metadata;
-    using DeviceType = Device<SolarEdge>;
+    inline static constexpr auto metadata = makeDeviceSchema<RegisterId>(
+            block("pv", 40083,
+                field<DataType::int16>(ac_power, Scaling::none, WordOrder::HighFirst, "AC Power", "W", 0),
+                field<DataType::int16>(ac_power_sf, Scaling::none, WordOrder::HighFirst, "AC Power SF", "", 0)
+            ),
+            block("battery", 57716,
+                field<DataType::float32>(b1_instantaneous_power, Scaling::none, WordOrder::LowFirst, "Battery 1 Instantaneous Power", "W", 0)
+            ),
+            block("dc", 40100,
+                field<DataType::int16>(dc_power, Scaling::none, WordOrder::HighFirst, "DC Power", "W", 0),
+                field<DataType::int16>(dc_power_sf, Scaling::none, WordOrder::HighFirst, "DC Power SF", "", 0)
+            )
+        );
+    // ---- Device factory and indexed metadata access ----
+    // SchemaApi provides DeviceType and O(1) description<R>().
     static DeviceType makeDevice();
-    template<RegisterId R>
-    static constexpr const RegisterDescription& description();
 };
-inline constexpr SolarEdge::Metadata SolarEdge::metadata = SolarEdge::makeMetadata();
 static_assert(SolarEdge::metadata.valid, "Invalid SolarEdge register schema");
-template<SolarEdge::RegisterId R>
-constexpr const RegisterDescription& SolarEdge::description() {
-    constexpr auto index = static_cast<std::size_t>(R);
-    static_assert(index < register_count, "Register index out of range");
-    return metadata.registers[index];
-}
+
 } // namespace modbus_gateway

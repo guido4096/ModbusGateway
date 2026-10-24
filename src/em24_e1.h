@@ -71,96 +71,75 @@ struct EM24_E1 : SchemaApi<EM24_E1> {
         maximum_demand_current,
         last
     };
-    // ---- Compile-time schema dimensions ----
+    // Register layout is the single source of truth. Blocks and total word
+    // storage are counted automatically. All field properties are explicit.
     using RegisterId = e_registers;
-    static constexpr std::size_t register_count = static_cast<std::size_t>(last);
-    static constexpr std::size_t block_count = 4;
-    static constexpr std::size_t word_count = 98;
-    using Metadata = StaticDescription<RegisterId, register_count, block_count, word_count>;
-    // ---- Modbus register map ----
-    // Each block starts at its wire address. Subsequent register addresses
-    // are derived from preceding widths (1 word for 16-bit, 2 for 32-bit).
-    // Field columns: ID, wire type, scale divisor, high-word-first,
-    // description, engineering unit, default raw bits.
-    // EM24 uses LOW 16-bit word first for 32-bit values. The original
-    // firmware used a host-endian union: its wordorder=true had the
-    // opposite effective meaning on ESP32. Hence false is intentional.
-    // Keep register order unchanged: it defines the wire layout.
-    static constexpr Metadata makeMetadata() {
-        return buildMetadata<RegisterId, register_count, block_count, word_count>({
-            // Block dynamic (base 0x0000): addresses within this block are contiguous.
-            {"dynamic", 0x0000, {
-                {l1_voltage, DataType::int32, Scaling::ten, false, "L1 Voltage", "V", 0},
-                {l2_voltage, DataType::int32, Scaling::ten, false, "L2 Voltage", "V", 0},
-                {l3_voltage, DataType::int32, Scaling::ten, false, "L3 Voltage", "V", 0},
-                {l12_voltage, DataType::int32, Scaling::ten, false, "L1-L2 Voltage", "V", 0},
-                {l23_voltage, DataType::int32, Scaling::ten, false, "L2-L3 Voltage", "V", 0},
-                {l31_voltage, DataType::int32, Scaling::ten, false, "L3-L1 Voltage", "V", 0},
-                {l1_current, DataType::int32, Scaling::thousand, false, "L1 Current", "A", 0},
-                {l2_current, DataType::int32, Scaling::thousand, false, "L2 Current", "A", 0},
-                {l3_current, DataType::int32, Scaling::thousand, false, "L3 Current", "A", 0},
-                {l1_power_active, DataType::int32, Scaling::ten, false, "L1 Power (Active)", "W", 0},
-                {l2_power_active, DataType::int32, Scaling::ten, false, "L2 Power (Active)", "W", 0},
-                {l3_power_active, DataType::int32, Scaling::ten, false, "L3 Power (Active)", "W", 0},
-                {l1_power_apparent, DataType::int32, Scaling::ten, false, "L1 Power (Apparent)", "VA", 0},
-                {l2_power_apparent, DataType::int32, Scaling::ten, false, "L2 Power (Apparent)", "VA", 0},
-                {l3_power_apparent, DataType::int32, Scaling::ten, false, "L3 Power (Apparent)", "VA", 0},
-                {l1_power_reactive, DataType::int32, Scaling::ten, false, "L1 Power (Reactive)", "VAr", 0},
-                {l2_power_reactive, DataType::int32, Scaling::ten, false, "L2 Power (Reactive)", "VAr", 0},
-                {l3_power_reactive, DataType::int32, Scaling::ten, false, "L3 Power (Reactive)", "VAr", 0},
-                {voltage_ln, DataType::int32, Scaling::ten, false, "L-N Voltage", "V", 0},
-                {voltage_ll, DataType::int32, Scaling::ten, false, "L-L Voltage", "V", 0},
-                {power_active, DataType::int32, Scaling::ten, false, "Total Power (Active)", "W", 0},
-                {power_apparent, DataType::int32, Scaling::ten, false, "Total Power (Apparent)", "VA", 0},
-                {power_reactive, DataType::int32, Scaling::ten, false, "Total Power (Reactive)", "VAr", 0},
-                {l1_power_factor, DataType::int16, Scaling::thousand, true, "L1 Power Factor", "", 0},
-                {l2_power_factor, DataType::int16, Scaling::thousand, true, "L2 Power Factor", "", 0},
-                {l3_power_factor, DataType::int16, Scaling::thousand, true, "L3 Power Factor", "", 0},
-                {total_pf, DataType::int16, Scaling::thousand, true, "Total Power Factor", "", 0},
-                {phase_sequence, DataType::int16, Scaling::none, true, "Phase Sequence", "", 0},
-                {frequency, DataType::uint16, Scaling::ten, true, "Frequency", "Hz", 0},
-            }},
-            // Block energy (base 0x0034): addresses within this block are contiguous.
-            {"energy", 0x0034, {
-                {import_energy_active, DataType::int32, Scaling::ten, false, "Imported Energy (Active)", "kWh", 0},
-                {import_energy_reactive, DataType::int32, Scaling::ten, false, "Imported Energy (Reactive)", "Kvarh", 0},
-                {demand_power_active, DataType::int32, Scaling::ten, false, "Demand Power Active", "W", 0},
-                {maximum_demand_power_active, DataType::int32, Scaling::ten, false, "Maximum Demand Power Active", "W", 0},
-                {import_energy_active_partial, DataType::int32, Scaling::ten, false, "Partial imported Energy (Active))", "kWh", 0},
-                {import_energy_reactive_partial, DataType::int32, Scaling::ten, false, "Partial imported Energy (Reactive))", "Kvarh", 0},
-                {l1_import_energy_active, DataType::int32, Scaling::ten, false, "L1 Imported Energy (Active)", "kWh", 0},
-                {l2_import_energy_active, DataType::int32, Scaling::ten, false, "L2 Imported Energy (Active)", "kWh", 0},
-                {l3_import_energy_active, DataType::int32, Scaling::ten, false, "L3 Imported Energy (Active)", "kWh", 0},
-                {t1_import_energy, DataType::int32, Scaling::ten, false, "Tarif 1 imported energy (Active)", "kWh", 0},
-                {t2_import_energy, DataType::int32, Scaling::ten, false, "Tarif 2 imported energy (Active)", "kWh", 0},
-                {t3_import_energy, DataType::int32, Scaling::ten, false, "Tarif 3 imported energy (Active)", "kWh", 0},
-                {t4_import_energy, DataType::int32, Scaling::ten, false, "Tarif 4 imported energy (Active)", "kWh", 0},
-                {export_energy_active, DataType::int32, Scaling::ten, false, "Exported Energy (Active)", "kWh", 0},
-                {export_energy_reactive, DataType::int32, Scaling::ten, false, "Exported Energy (Reactive)", "Kvarh", 0},
-            }},
-            // Block time (base 0x005a): addresses within this block are contiguous.
-            {"time", 0x005a, {
-                {hour, DataType::int32, Scaling::hundred, false, "Hour", "hour", 0},
-            }},
-            // Block tariff (base 0x006e): addresses within this block are contiguous.
-            {"tariff", 0x006e, {
-                {t1_import_reactive, DataType::int32, Scaling::ten, false, "Tarif 1 imported energy (Reactive)", "Kvarh", 0},
-                {t2_import_reactive, DataType::int32, Scaling::ten, false, "Tarif 2 imported energy (Reactive)", "Kvarh", 0},
-                {t3_import_reactive, DataType::int32, Scaling::ten, false, "Tarif 3 imported energy (Reactive)", "Kvarh", 0},
-                {t4_import_reactive, DataType::int32, Scaling::ten, false, "Tarif 4 imported energy (Reactive)", "Kvarh", 0},
-                {demand_power_apparent, DataType::int32, Scaling::ten, false, "Demand Power (Apparent)", "VA", 0},
-                {maximum_demand_power_apparent, DataType::int32, Scaling::ten, false, "Maximum Demand Power (Apparent)", "VA", 0},
-                {maximum_demand_current, DataType::int32, Scaling::thousand, false, "Maximum Demand current (Active)", "A", 0},
-            }},
-        });
-    }
+    inline static constexpr auto metadata = makeDeviceSchema<RegisterId>(
+            block("dynamic", 0x0000,
+                field<DataType::int32>(l1_voltage, Scaling::ten, WordOrder::LowFirst, "L1 Voltage", "V", 0),
+                field<DataType::int32>(l2_voltage, Scaling::ten, WordOrder::LowFirst, "L2 Voltage", "V", 0),
+                field<DataType::int32>(l3_voltage, Scaling::ten, WordOrder::LowFirst, "L3 Voltage", "V", 0),
+                field<DataType::int32>(l12_voltage, Scaling::ten, WordOrder::LowFirst, "L1-L2 Voltage", "V", 0),
+                field<DataType::int32>(l23_voltage, Scaling::ten, WordOrder::LowFirst, "L2-L3 Voltage", "V", 0),
+                field<DataType::int32>(l31_voltage, Scaling::ten, WordOrder::LowFirst, "L3-L1 Voltage", "V", 0),
+                field<DataType::int32>(l1_current, Scaling::thousand, WordOrder::LowFirst, "L1 Current", "A", 0),
+                field<DataType::int32>(l2_current, Scaling::thousand, WordOrder::LowFirst, "L2 Current", "A", 0),
+                field<DataType::int32>(l3_current, Scaling::thousand, WordOrder::LowFirst, "L3 Current", "A", 0),
+                field<DataType::int32>(l1_power_active, Scaling::ten, WordOrder::LowFirst, "L1 Power (Active)", "W", 0),
+                field<DataType::int32>(l2_power_active, Scaling::ten, WordOrder::LowFirst, "L2 Power (Active)", "W", 0),
+                field<DataType::int32>(l3_power_active, Scaling::ten, WordOrder::LowFirst, "L3 Power (Active)", "W", 0),
+                field<DataType::int32>(l1_power_apparent, Scaling::ten, WordOrder::LowFirst, "L1 Power (Apparent)", "VA", 0),
+                field<DataType::int32>(l2_power_apparent, Scaling::ten, WordOrder::LowFirst, "L2 Power (Apparent)", "VA", 0),
+                field<DataType::int32>(l3_power_apparent, Scaling::ten, WordOrder::LowFirst, "L3 Power (Apparent)", "VA", 0),
+                field<DataType::int32>(l1_power_reactive, Scaling::ten, WordOrder::LowFirst, "L1 Power (Reactive)", "VAr", 0),
+                field<DataType::int32>(l2_power_reactive, Scaling::ten, WordOrder::LowFirst, "L2 Power (Reactive)", "VAr", 0),
+                field<DataType::int32>(l3_power_reactive, Scaling::ten, WordOrder::LowFirst, "L3 Power (Reactive)", "VAr", 0),
+                field<DataType::int32>(voltage_ln, Scaling::ten, WordOrder::LowFirst, "L-N Voltage", "V", 0),
+                field<DataType::int32>(voltage_ll, Scaling::ten, WordOrder::LowFirst, "L-L Voltage", "V", 0),
+                field<DataType::int32>(power_active, Scaling::ten, WordOrder::LowFirst, "Total Power (Active)", "W", 0),
+                field<DataType::int32>(power_apparent, Scaling::ten, WordOrder::LowFirst, "Total Power (Apparent)", "VA", 0),
+                field<DataType::int32>(power_reactive, Scaling::ten, WordOrder::LowFirst, "Total Power (Reactive)", "VAr", 0),
+                field<DataType::int16>(l1_power_factor, Scaling::thousand, WordOrder::HighFirst, "L1 Power Factor", "", 0),
+                field<DataType::int16>(l2_power_factor, Scaling::thousand, WordOrder::HighFirst, "L2 Power Factor", "", 0),
+                field<DataType::int16>(l3_power_factor, Scaling::thousand, WordOrder::HighFirst, "L3 Power Factor", "", 0),
+                field<DataType::int16>(total_pf, Scaling::thousand, WordOrder::HighFirst, "Total Power Factor", "", 0),
+                field<DataType::int16>(phase_sequence, Scaling::none, WordOrder::HighFirst, "Phase Sequence", "", 0),
+                field<DataType::uint16>(frequency, Scaling::ten, WordOrder::HighFirst, "Frequency", "Hz", 0)
+            ),
+            block("energy", 0x0034,
+                field<DataType::int32>(import_energy_active, Scaling::ten, WordOrder::LowFirst, "Imported Energy (Active)", "kWh", 0),
+                field<DataType::int32>(import_energy_reactive, Scaling::ten, WordOrder::LowFirst, "Imported Energy (Reactive)", "Kvarh", 0),
+                field<DataType::int32>(demand_power_active, Scaling::ten, WordOrder::LowFirst, "Demand Power Active", "W", 0),
+                field<DataType::int32>(maximum_demand_power_active, Scaling::ten, WordOrder::LowFirst, "Maximum Demand Power Active", "W", 0),
+                field<DataType::int32>(import_energy_active_partial, Scaling::ten, WordOrder::LowFirst, "Partial imported Energy (Active))", "kWh", 0),
+                field<DataType::int32>(import_energy_reactive_partial, Scaling::ten, WordOrder::LowFirst, "Partial imported Energy (Reactive))", "Kvarh", 0),
+                field<DataType::int32>(l1_import_energy_active, Scaling::ten, WordOrder::LowFirst, "L1 Imported Energy (Active)", "kWh", 0),
+                field<DataType::int32>(l2_import_energy_active, Scaling::ten, WordOrder::LowFirst, "L2 Imported Energy (Active)", "kWh", 0),
+                field<DataType::int32>(l3_import_energy_active, Scaling::ten, WordOrder::LowFirst, "L3 Imported Energy (Active)", "kWh", 0),
+                field<DataType::int32>(t1_import_energy, Scaling::ten, WordOrder::LowFirst, "Tarif 1 imported energy (Active)", "kWh", 0),
+                field<DataType::int32>(t2_import_energy, Scaling::ten, WordOrder::LowFirst, "Tarif 2 imported energy (Active)", "kWh", 0),
+                field<DataType::int32>(t3_import_energy, Scaling::ten, WordOrder::LowFirst, "Tarif 3 imported energy (Active)", "kWh", 0),
+                field<DataType::int32>(t4_import_energy, Scaling::ten, WordOrder::LowFirst, "Tarif 4 imported energy (Active)", "kWh", 0),
+                field<DataType::int32>(export_energy_active, Scaling::ten, WordOrder::LowFirst, "Exported Energy (Active)", "kWh", 0),
+                field<DataType::int32>(export_energy_reactive, Scaling::ten, WordOrder::LowFirst, "Exported Energy (Reactive)", "Kvarh", 0)
+            ),
+            block("time", 0x005a,
+                field<DataType::int32>(hour, Scaling::hundred, WordOrder::LowFirst, "Hour", "hour", 0)
+            ),
+            block("tariff", 0x006e,
+                field<DataType::int32>(t1_import_reactive, Scaling::ten, WordOrder::LowFirst, "Tarif 1 imported energy (Reactive)", "Kvarh", 0),
+                field<DataType::int32>(t2_import_reactive, Scaling::ten, WordOrder::LowFirst, "Tarif 2 imported energy (Reactive)", "Kvarh", 0),
+                field<DataType::int32>(t3_import_reactive, Scaling::ten, WordOrder::LowFirst, "Tarif 3 imported energy (Reactive)", "Kvarh", 0),
+                field<DataType::int32>(t4_import_reactive, Scaling::ten, WordOrder::LowFirst, "Tarif 4 imported energy (Reactive)", "Kvarh", 0),
+                field<DataType::int32>(demand_power_apparent, Scaling::ten, WordOrder::LowFirst, "Demand Power (Apparent)", "VA", 0),
+                field<DataType::int32>(maximum_demand_power_apparent, Scaling::ten, WordOrder::LowFirst, "Maximum Demand Power (Apparent)", "VA", 0),
+                field<DataType::int32>(maximum_demand_current, Scaling::thousand, WordOrder::LowFirst, "Maximum Demand current (Active)", "A", 0)
+            )
+        );
     // ---- Device factory and indexed metadata access ----
     // SchemaApi provides DeviceType and O(1) description<R>().
-    static const Metadata metadata;
     static DeviceType makeDevice();
 };
-// C++17 requires this definition after the schema is complete.
-inline constexpr EM24_E1::Metadata EM24_E1::metadata = EM24_E1::makeMetadata();
 static_assert(EM24_E1::metadata.valid, "Invalid EM24_E1 register schema");
 
 } // namespace modbus_gateway

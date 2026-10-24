@@ -180,6 +180,7 @@ namespace modbus_gateway {
     };
 
 enum class DataType : uint8_t { float32, int16, uint16, int32, uint32 };
+enum class WordOrder : uint8_t { HighFirst, LowFirst };
 enum class Scaling : uint16_t { none=1, ten=10, hundred=100, thousand=1000 };
 constexpr uint16_t getScaling(Scaling s) { return static_cast<uint16_t>(s); }
 constexpr uint8_t numberRegisters(DataType d) {
@@ -220,71 +221,99 @@ struct BlockDescription {
 // No lookup loops are used when a register is identified by its enum value.
 template<typename Id, std::size_t N, std::size_t B, std::size_t Words>
 struct StaticDescription {
+    static constexpr std::size_t word_count = Words;
     std::array<RegisterDescription, N> registers{};
     std::array<BlockDescription, B> blocks{};
     bool valid = true;
 };
 
 
-// Compact nested initializer specification. Temporary initializer_list objects
-// are consumed entirely within constant evaluation: no runtime allocation.
-template<typename Id>
-struct FieldSpec {
+// C++17 value-and-type schema builder. Widths and array dimensions are
+// derived from declarations, not repeated by each device.
+// Every field explicitly specifies type, scaling, word order and raw default.
+template<typename Id, DataType Type>
+struct TypedField {
+    using id_type = Id;
+    static constexpr DataType data_type = Type;
+    static constexpr std::size_t word_count = numberRegisters(Type);
     Id id;
-    DataType type;
     Scaling scaling;
-    bool high_word_first;
+    WordOrder order;
     const char* name;
     const char* unit;
     uint32_t default_bits;
 };
-template<typename Id>
-struct BlockSpec {
+
+template<DataType Type, typename Id>
+constexpr auto field(Id id, Scaling scaling, WordOrder order,
+                     const char* name, const char* unit, uint32_t default_bits) {
+    return TypedField<Id, Type>{id, scaling, order, name, unit, default_bits};
+}
+
+template<typename... Fields>
+struct TypedBlock {
+    static constexpr std::size_t word_count = (Fields::word_count + ... + 0);
     const char* name;
     uint16_t address;
-    std::initializer_list<FieldSpec<Id>> fields;
+    std::tuple<Fields...> fields;
 };
 
-template<typename Id, std::size_t N, std::size_t B, std::size_t Words>
-constexpr StaticDescription<Id,N,B,Words>
-buildMetadata(std::initializer_list<BlockSpec<Id>> blocks) {
-    StaticDescription<Id,N,B,Words> m{};
-    std::array<bool,N> assigned{};
+template<typename... Fields>
+constexpr auto block(const char* name, uint16_t address, Fields... fields) {
+    static_assert(sizeof...(Fields) > 0, "A Modbus block must contain fields");
+    return TypedBlock<Fields...>{name, address, std::tuple<Fields...>{fields...}};
+}
+
+template<typename Id, typename... Blocks>
+constexpr auto makeDeviceSchema(const Blocks&... blocks) {
+    constexpr std::size_t N = static_cast<std::size_t>(Id::last);
+    constexpr std::size_t B = sizeof...(Blocks);
+    constexpr std::size_t Words = (Blocks::word_count + ... + 0);
+    StaticDescription<Id, N, B, Words> m{};
+    std::array<bool, N> assigned{};
     std::size_t blockNo = 0, storage = 0;
-    for (const auto& block : blocks) {
-        if (blockNo >= B) { m.valid=false; break; }
-        uint32_t offset = 0;
-        for (const auto& f : block.fields) {
-            const auto id = static_cast<std::size_t>(f.id);
-            const uint32_t width = numberRegisters(f.type);
-            if (id >= N || width == 0 || assigned[id] ||
-                uint32_t(block.address)+offset+width > 65536 ||
-                storage+offset+width > Words) {
-                m.valid=false;
-                continue;
-            }
-            assigned[id] = true;
-            m.registers[id] = RegisterDescription{
-                static_cast<uint16_t>(uint32_t(block.address)+offset),
-                static_cast<uint16_t>(blockNo),
-                static_cast<uint16_t>(offset),
-                static_cast<uint16_t>(storage+offset),
-                static_cast<uint8_t>(width), f.type, f.scaling,
-                f.high_word_first, f.name, f.unit, f.default_bits
+
+    auto appendBlock = [&](const auto& b) {
+        std::size_t offset = 0;
+        std::apply([&](const auto&... fs) {
+            auto appendField = [&](const auto& f) {
+                using F = std::decay_t<decltype(f)>;
+                static_assert(std::is_same_v<typename F::id_type, Id>,
+                              "Register ID type does not match schema");
+                constexpr auto width = F::word_count;
+                const auto index = static_cast<std::size_t>(f.id);
+                if (index >= N || assigned[index] ||
+                    uint32_t(b.address) + offset + width > 65536 ||
+                    storage + offset + width > Words) {
+                    m.valid = false;
+                } else {
+                    assigned[index] = true;
+                    m.registers[index] = RegisterDescription{
+                        static_cast<uint16_t>(uint32_t(b.address) + offset),
+                        static_cast<uint16_t>(blockNo),
+                        static_cast<uint16_t>(offset),
+                        static_cast<uint16_t>(storage + offset),
+                        static_cast<uint8_t>(width), F::data_type, f.scaling,
+                        f.order == WordOrder::HighFirst,
+                        f.name, f.unit, f.default_bits
+                    };
+                }
+                offset += width;
             };
-            offset += width;
-        }
+            (appendField(fs), ...);
+        }, b.fields);
         m.blocks[blockNo] = BlockDescription{
-            block.name, block.address, static_cast<uint16_t>(offset),
+            b.name, b.address, static_cast<uint16_t>(offset),
             static_cast<uint16_t>(storage)
         };
         storage += offset;
         ++blockNo;
-    }
-    if (blockNo != B || storage != Words) m.valid = false;
-    for (auto present : assigned) if (!present) m.valid = false;
-    for (std::size_t i=0; i<blockNo; ++i)
-        for (std::size_t j=i+1; j<blockNo; ++j) {
+    };
+    (appendBlock(blocks), ...);
+    if (storage != Words) m.valid = false;
+    for (bool present : assigned) if (!present) m.valid = false;
+    for (std::size_t i=0; i<B; ++i)
+        for (std::size_t j=i+1; j<B; ++j) {
             const auto& a=m.blocks[i]; const auto& b=m.blocks[j];
             if (uint32_t(a.address)<uint32_t(b.address)+b.words &&
                 uint32_t(b.address)<uint32_t(a.address)+a.words)
@@ -338,12 +367,31 @@ void encode(uint16_t* data, const RegisterDescription& r, T value) {
     storeBits(data, r.words, r.high_word_first, bits);
 }
 
+// Shared schema API: device headers provide only the register IDs and map.
+// Inherited description<R>() is a direct array index, never a name search.
+// The schema defines RegisterId and constexpr metadata; sizes are derived.
+template<typename Schema> class Device;
+
+template<typename Schema>
+struct SchemaApi {
+    using DeviceType = Device<Schema>;
+
+    template<auto R>
+    static constexpr const RegisterDescription& description() {
+        static_assert(std::is_same_v<decltype(R), typename Schema::RegisterId>,
+                      "Register ID belongs to another schema");
+        constexpr auto index = static_cast<std::size_t>(R);
+        static_assert(index < Schema::metadata.registers.size(), "Register index out of range");
+        return Schema::metadata.registers[index];
+    }
+};
+
 template<typename Schema>
 class Device {
 public:
     using RegisterType = typename Schema::RegisterId;
     static constexpr auto& metadata = Schema::metadata;
-    static constexpr std::size_t word_count = Schema::word_count;
+    static constexpr std::size_t word_count = decltype(Schema::metadata)::word_count;
 
     Device() {
         for (std::size_t i=0; i<metadata.registers.size(); ++i) {
@@ -363,7 +411,7 @@ public:
     template<RegisterType R>
     static constexpr const RegisterDescription& description() {
         constexpr auto i = static_cast<std::size_t>(R);
-        static_assert(i < Schema::register_count, "Register ID out of range");
+        static_assert(i < Schema::metadata.registers.size(), "Register ID out of range");
         return metadata.registers[i];
     }
 

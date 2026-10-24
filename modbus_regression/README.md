@@ -10,7 +10,7 @@ Unzip `modbus_regression/` into your project root, beside `src/` and `platformio
 python3 modbus_regression/tests/run.py --project-src src
 ```
 
-You can also run the packaged historical snapshot, but **it is older than the corrected word-order schemas and is expected to fail the current metadata checks**. Use `--project-src src` to validate your current code:
+The bundled `new/` snapshot matches this third-pass refactor and can be tested separately:
 
 ```sh
 python3 modbus_regression/tests/run.py
@@ -22,7 +22,7 @@ Run **only** the executable conversion comparison:
 python3 modbus_regression/tests/conversion_equivalence.py src
 ```
 
-The scripts return a nonzero exit status when an unaccepted difference or compilation failure occurs. The shipped historical `new/` snapshot currently produces 124 word-order metadata mismatches; this is **not a passing reference fixture** and is kept unchanged in this documentation-only revision. They compile temporary native binaries; they do **not** upload firmware. After the tests pass, you can independently compile the ESP32 target (also without uploading):
+The scripts return a nonzero exit status when an unaccepted difference or compilation failure occurs. They compile temporary native binaries; they do **not** upload firmware. After the tests pass, you can independently compile the ESP32 target (also without uploading):
 
 ```sh
 pio run -e T-ETH-POE-PRO
@@ -55,3 +55,11 @@ The earlier migration also surfaced a WattNode `modbus_address` word-order metad
 - They are not a substitute for actual ESP32 measurements and protocol captures. You have separately verified the meter-to-SolarEdge, Alfen and optimizer paths on hardware.
 
 Keep this suite in Git beside the firmware and run it before future schema/codec changes. To add scenarios, extend `tests/conversion_runner.cpp` and the corresponding conversion fixtures, then rerun the full command.
+
+## Schema declarations (third-pass refactor)
+
+`block(name, address, fields...)` and `field<DataType::...>(id, scaling, wordOrder, label, unit, defaultBits)` are C++17 constexpr helpers in `definitions.h`. Every field property is explicitly supplied; **there are no implicit scaling, word-order or default-value parameters**. Word order is named (`WordOrder::HighFirst` / `WordOrder::LowFirst`), avoiding the ambiguous old boolean.
+
+The builder derives register count from `RegisterId::last`, block count from the number of `block(...)` entries and storage word count from field widths. It derives addresses, offsets, and validates IDs and overlapping blocks at compile time. The public `get<R>()`, `set<R>()`, and `description<R>()` remain indexed (no name searches). The `tests/schema_dump.cpp` translation unit now includes assertions for the inferred dimensions of all five devices. Runtime transport behavior is unchanged.
+
+This package contains only one README. Run the tests and then `pio run -e T-ETH-POE-PRO` (neither flashes hardware).

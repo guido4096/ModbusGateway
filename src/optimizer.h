@@ -20,33 +20,18 @@ struct Optimizer : SchemaApi<Optimizer> {
         optimizer_strategy,
         last
     };
-    // ---- Compile-time schema dimensions ----
+    // Register layout is the single source of truth. Blocks and total word
+    // storage are counted automatically. All field properties are explicit.
     using RegisterId = e_registers;
-    static constexpr std::size_t register_count = static_cast<std::size_t>(last);
-    static constexpr std::size_t block_count = 1;
-    static constexpr std::size_t word_count = 2;
-    using Metadata = StaticDescription<RegisterId, register_count, block_count, word_count>;
-    // ---- Modbus register map ----
-    // Each block starts at its wire address. Subsequent register addresses
-    // are derived from preceding widths (1 word for 16-bit, 2 for 32-bit).
-    // Field columns: ID, wire type, scale divisor, high-word-first,
-    // description, engineering unit, default raw bits.
-    // Keep the register order unchanged: it defines the wire layout.
-    static constexpr Metadata makeMetadata() {
-        return buildMetadata<RegisterId, register_count, block_count, word_count>({
-            // Block strategy (base 0x0000): addresses within this block are contiguous.
-            {"strategy", 0x0000, {
-                {optimizer_strategy, DataType::int32, Scaling::none, false, "Requested Power From Inverter", "0 1 2", 0},
-            }},
-        });
-    }
+    inline static constexpr auto metadata = makeDeviceSchema<RegisterId>(
+            block("strategy", 0x0000,
+                field<DataType::int32>(optimizer_strategy, Scaling::none, WordOrder::LowFirst, "Requested Power From Inverter", "0 1 2", 0)
+            )
+        );
     // ---- Device factory and indexed metadata access ----
     // SchemaApi provides DeviceType and O(1) description<R>().
-    static const Metadata metadata;
     static DeviceType makeDevice();
 };
-// C++17 requires this definition after the schema is complete.
-inline constexpr Optimizer::Metadata Optimizer::metadata = Optimizer::makeMetadata();
 static_assert(Optimizer::metadata.valid, "Invalid Optimizer register schema");
 
 } // namespace modbus_gateway

@@ -136,169 +136,145 @@ struct WattNode : SchemaApi<WattNode> {
         unknown2,
         last
     };
-    // ---- Compile-time schema dimensions ----
+    // Register layout is the single source of truth. Blocks and total word
+    // storage are counted automatically. All field properties are explicit.
     using RegisterId = e_registers;
-    static constexpr std::size_t register_count = static_cast<std::size_t>(last);
-    static constexpr std::size_t block_count = 8;
-    static constexpr std::size_t word_count = 173;
-    using Metadata = StaticDescription<RegisterId, register_count, block_count, word_count>;
-    // ---- Modbus register map ----
-    // Each block starts at its wire address. Subsequent register addresses
-    // are derived from preceding widths (1 word for 16-bit, 2 for 32-bit).
-    // Field columns: ID, wire type, scale divisor, high-word-first,
-    // description, engineering unit, default raw bits.
-    // Keep the register order unchanged: it defines the wire layout.
-    static constexpr Metadata makeMetadata() {
-        return buildMetadata<RegisterId, register_count, block_count, word_count>({
-            // Block block0000 (base 0): addresses within this block are contiguous.
-            {"block0000", 0, {
-                {dummy1, DataType::int16, Scaling::none, true, "Dummy 1 always returns 0", "", 0},
-                {dummy2, DataType::int16, Scaling::none, true, "Dummy 2 always returns 0", "", 0},
-            }},
-            // Block block1000 (base 1000): addresses within this block are contiguous.
-            {"block1000", 1000, {
-                {energy_active, DataType::float32, Scaling::none, false, "Total Energy (Active)", "kWh", 0},
-                {import_energy_active, DataType::float32, Scaling::none, false, "Imported Total Energy (Active)", "kWh", 0},
-                {energy_active_nr, DataType::float32, Scaling::none, false, "Total Energy NR (Active)", "kWh", 0},
-                {import_energy_active_nr, DataType::float32, Scaling::none, false, "Imported Total Energy NR (Active)", "kWh", 0},
-                {power_active, DataType::float32, Scaling::none, false, "Total Power (Active)", "W", 0},
-                {l1_power_active, DataType::float32, Scaling::none, false, "L1 Power (Active)", "W", 0},
-                {l2_power_active, DataType::float32, Scaling::none, false, "L2 Power (Active)", "W", 0},
-                {l3_power_active, DataType::float32, Scaling::none, false, "L3 Power (Active)", "W", 0},
-                {voltage_ln, DataType::float32, Scaling::none, false, "Voltage L-N", "V", 0},
-                {l1n_voltage, DataType::float32, Scaling::none, false, "Voltage L1-N", "V", 0},
-                {l2n_voltage, DataType::float32, Scaling::none, false, "Voltage L2-N", "V", 0},
-                {l3n_voltage, DataType::float32, Scaling::none, false, "Voltage L3-N", "V", 0},
-                {voltage_ll, DataType::float32, Scaling::none, false, "Voltage LL", "V", 0},
-                {l12_voltage, DataType::float32, Scaling::none, false, "Voltage L1-L2", "V", 0},
-                {l23_voltage, DataType::float32, Scaling::none, false, "Voltage L2-L3", "V", 0},
-                {l31_voltage, DataType::float32, Scaling::none, false, "Voltage L3-L1", "V", 0},
-                {frequency, DataType::float32, Scaling::none, false, "Frequency", "", 0},
-            }},
-            // Block block1100 (base 1100): addresses within this block are contiguous.
-            {"block1100", 1100, {
-                {l1_energy_active, DataType::float32, Scaling::none, false, "L1 Energy (Active)", "kWh", 0},
-                {l2_energy_active, DataType::float32, Scaling::none, false, "L2 Energy (Active)", "kWh", 0},
-                {l3_energy_active, DataType::float32, Scaling::none, false, "L3 Energy (Active)", "kWh", 0},
-                {l1_import_energy_active, DataType::float32, Scaling::none, false, "L1 Imported Energy (Active)", "kWh", 0},
-                {l2_import_energy_active, DataType::float32, Scaling::none, false, "L2 Imported Energy (Active)", "kWh", 0},
-                {l3_import_energy_active, DataType::float32, Scaling::none, false, "L3 Imported Energy (Active)", "kWh", 0},
-                {export_energy_active, DataType::float32, Scaling::none, false, "Exported Energy (Active)", "kWh", 0},
-                {export_energy_active_nr, DataType::float32, Scaling::none, false, "Exported Energy NR (Active)", "kWh", 0},
-                {l1_export_energy_active, DataType::float32, Scaling::none, false, "L1 Exported Energy (Active)", "kWh", 0},
-                {l2_export_energy_active, DataType::float32, Scaling::none, false, "L2 Exported Energy (Active)", "kWh", 0},
-                {l3_export_energy_active, DataType::float32, Scaling::none, false, "L3 Exported Energy (Active)", "kWh", 0},
-                {energy_reactive, DataType::float32, Scaling::none, false, "Energy (Reactive)", "kWh", 0},
-                {l1_energy_reactive, DataType::float32, Scaling::none, false, "L1 Energy (Reactive)", "kWh", 0},
-                {l2_energy_reactive, DataType::float32, Scaling::none, false, "L2 Energy (Reactive)", "kWh", 0},
-                {l3_energy_reactive, DataType::float32, Scaling::none, false, "L3 Energy (Reactive)", "kWh", 0},
-                {energy_apparent, DataType::float32, Scaling::none, false, "Energy (Apparent)", "kWh", 0},
-                {l1_energy_apparent, DataType::float32, Scaling::none, false, "L1 Energy (Apparent)", "kWh", 0},
-                {l2_energy_apparent, DataType::float32, Scaling::none, false, "L2 Energy (Apparent)", "kWh", 0},
-                {l3_energy_apparent, DataType::float32, Scaling::none, false, "L3 Energy (Apparent)", "kWh", 0},
-                {power_factor, DataType::float32, Scaling::none, false, "Power Factor", "", 0},
-                {l1_power_factor, DataType::float32, Scaling::none, false, "L1 Power Factor", "", 0},
-                {l2_power_factor, DataType::float32, Scaling::none, false, "L2 Power Factor", "", 0},
-                {l3_power_factor, DataType::float32, Scaling::none, false, "L3 Power Factor", "", 0},
-                {power_reactive, DataType::float32, Scaling::none, false, "Power (Reactive)", "VAr", 0},
-                {l1_power_reactive, DataType::float32, Scaling::none, false, "L1 Power (Reactive)", "VAr", 0},
-                {l2_power_reactive, DataType::float32, Scaling::none, false, "L2 Power (Reactive)", "VAr", 0},
-                {l3_power_reactive, DataType::float32, Scaling::none, false, "L3 Power (Reactive)", "VAr", 0},
-                {power_apparent, DataType::float32, Scaling::none, false, "Power (Apparent)", "VA", 0},
-                {l1_power_apparent, DataType::float32, Scaling::none, false, "L1 Power (Apparent)", "VA", 0},
-                {l2_power_apparent, DataType::float32, Scaling::none, false, "L2 Power (Apparent)", "VA", 0},
-                {l3_power_apparent, DataType::float32, Scaling::none, false, "L3 Power (Apparent)", "VA", 0},
-                {l1_current, DataType::float32, Scaling::none, false, "L1 Current", "A", 0},
-                {l2_current, DataType::float32, Scaling::none, false, "L2 Current", "A", 0},
-                {l3_current, DataType::float32, Scaling::none, false, "L3 Current", "A", 0},
-                {demand_power_active, DataType::float32, Scaling::none, false, "Demand Power (Active)", "W", 0},
-                {minimum_demand_power_active, DataType::float32, Scaling::none, false, "Minimum Demand Power (Active)", "W", 0},
-                {maximum_demand_power_active, DataType::float32, Scaling::none, false, "Maximum Demand Power (Active)", "W", 0},
-                {demand_power_apparent, DataType::float32, Scaling::none, false, "Demand Power (Apparent)", "VA", 0},
-                {l1_demand_power_active, DataType::float32, Scaling::none, false, "L1 Demand Power (Active)", "W", 0},
-                {l2_demand_power_active, DataType::float32, Scaling::none, false, "L2 Demand Power (Active)", "W", 0},
-                {l3_demand_power_active, DataType::float32, Scaling::none, false, "L3 Demand Power (Active)", "W", 0},
-            }},
-            // Block block1600 (base 1600): addresses within this block are contiguous.
-            {"block1600", 1600, {
-                {passcode, DataType::uint32, Scaling::none, false, "Passcode", "", 1234},
-                {ct_current, DataType::int16, Scaling::none, true, "CT Current", "A", 5},
-                {ct_current_l1, DataType::int16, Scaling::none, true, "L1 CT Current", "A", 5},
-                {ct_current_l2, DataType::int16, Scaling::none, true, "L2 CT Current", "A", 5},
-                {ct_current_l3, DataType::int16, Scaling::none, true, "L3 CT Current", "A", 5},
-                {ct_inverted, DataType::int16, Scaling::none, true, "CT Inverted", "", 0},
-                {measurement_averaging, DataType::int16, Scaling::none, true, "Measurement Averaging", "", 0},
-                {power_scale, DataType::int16, Scaling::none, true, "Power Scale", "", 0},
-                {demand_period, DataType::int16, Scaling::none, true, "Demand Period", "Minute", 15},
-                {demand_subintervals, DataType::int16, Scaling::none, true, "Demand Subintervals", "", 0},
-                {l1_power_energy_adj, DataType::int16, Scaling::none, true, "L1 Power/Energy adjustment", "", 10000},
-                {l2_power_energy_adj, DataType::int16, Scaling::none, true, "L2 Power/Energy adjustment", "", 10000},
-                {l3_power_energy_adj, DataType::int16, Scaling::none, true, "L3 Power/Energy adjustment", "", 10000},
-                {l1_ct_phase_angle_adj, DataType::int16, Scaling::none, true, "L1 CT Phase Angle adjustment", "", static_cast<uint32_t>(-1000)},
-                {l2_ct_phase_angle_adj, DataType::int16, Scaling::none, true, "L2 CT Phase Angle adjustment", "", static_cast<uint32_t>(-1000)},
-                {l3_ct_phase_angle_adj, DataType::int16, Scaling::none, true, "L3 CT Phase Angle adjustment", "", static_cast<uint32_t>(-1000)},
-                {minimum_power_reading, DataType::int16, Scaling::none, true, "Minimum Power Reading", "", 0},
-                {phase_offset, DataType::int16, Scaling::none, true, "Phase Offset", "", 120},
-                {reset_energy, DataType::int16, Scaling::none, true, "Reset Energy", "", 0},
-                {reset_demand, DataType::int16, Scaling::none, true, "Reset Demand", "", 0},
-                {current_scale, DataType::int16, Scaling::none, true, "Current Scale", "", 20000},
-                {io_pin_mode, DataType::int16, Scaling::none, true, "IO Pin Mode", "", 0},
-            }},
-            // Block block1650 (base 1650): addresses within this block are contiguous.
-            {"block1650", 1650, {
-                {apply_config, DataType::int16, Scaling::none, true, "Apply Config", "", 0},
-                {modbus_address, DataType::int16, Scaling::none, false, "Modbus Address", "", 0},
-                {baud_rate, DataType::int16, Scaling::none, true, "Baud Rate", "", 0},
-                {parity_mode, DataType::int16, Scaling::none, true, "Parity Mode", "", 0},
-                {modbus_mode, DataType::int16, Scaling::none, true, "Modbus Mode", "", 0},
-                {message_delay, DataType::int16, Scaling::ten, true, "Message Delay", "ms", 0},
-            }},
-            // Block block1700 (base 1700): addresses within this block are contiguous.
-            {"block1700", 1700, {
-                {serial_number, DataType::uint32, Scaling::none, false, "Serial Number", "", 0},
-                {uptime, DataType::uint32, Scaling::none, false, "Uptime", "s", 0},
-                {total_uptime, DataType::uint32, Scaling::none, false, "Total Uptime", "s", 0},
-                {wattnode_model, DataType::int16, Scaling::none, true, "Wattnode Model", "", 202},
-                {firmware_version, DataType::int16, Scaling::none, true, "Firmware Version", "", 31},
-                {options, DataType::int16, Scaling::none, true, "Options", "", 0},
-                {error_status, DataType::int16, Scaling::none, true, "Error Status", "", 0},
-                {power_fail_count, DataType::int16, Scaling::none, true, "Power Fail Count", "", 0},
-                {crc_error_count, DataType::int16, Scaling::none, true, "CRC Error Count", "", 0},
-                {frame_error_count, DataType::int16, Scaling::none, true, "Frame Error Count", "", 0},
-                {packet_error_count, DataType::int16, Scaling::none, true, "Packet Error Count", "", 0},
-                {overrun_count, DataType::int16, Scaling::none, true, "Overrun Count", "", 0},
-                {error_status_1, DataType::int16, Scaling::none, true, "Error Status 1", "", 0},
-                {error_status_2, DataType::int16, Scaling::none, true, "Error Status 2", "", 0},
-                {error_status_3, DataType::int16, Scaling::none, true, "Error Status 3", "", 0},
-                {error_status_4, DataType::int16, Scaling::none, true, "Error Status 4", "", 0},
-                {error_status_5, DataType::int16, Scaling::none, true, "Error Status 5", "", 0},
-                {error_status_6, DataType::int16, Scaling::none, true, "Error Status 6", "", 0},
-                {error_status_7, DataType::int16, Scaling::none, true, "Error Status 7", "", 0},
-                {error_status_8, DataType::int16, Scaling::none, true, "Error Status 8", "", 0},
-            }},
-            // Block block1736 (base 1736): addresses within this block are contiguous.
-            {"block1736", 1736, {
-                {unknown1, DataType::uint32, Scaling::none, false, "Unknown 1", "", 0},
-            }},
-            // Block block2127 (base 2127): addresses within this block are contiguous.
-            {"block2127", 2127, {
-                {unknown2, DataType::uint16, Scaling::none, true, "Unknown 2", "", 1},
-            }},
-        });
-    }
-    // Defined out of class because C++17 cannot initialize a constexpr static
-    // member using an in-class constexpr member function before class completion.
+    inline static constexpr auto metadata = makeDeviceSchema<RegisterId>(
+            block("block0000", 0,
+                field<DataType::int16>(dummy1, Scaling::none, WordOrder::HighFirst, "Dummy 1 always returns 0", "", 0),
+                field<DataType::int16>(dummy2, Scaling::none, WordOrder::HighFirst, "Dummy 2 always returns 0", "", 0)
+            ),
+            block("block1000", 1000,
+                field<DataType::float32>(energy_active, Scaling::none, WordOrder::LowFirst, "Total Energy (Active)", "kWh", 0),
+                field<DataType::float32>(import_energy_active, Scaling::none, WordOrder::LowFirst, "Imported Total Energy (Active)", "kWh", 0),
+                field<DataType::float32>(energy_active_nr, Scaling::none, WordOrder::LowFirst, "Total Energy NR (Active)", "kWh", 0),
+                field<DataType::float32>(import_energy_active_nr, Scaling::none, WordOrder::LowFirst, "Imported Total Energy NR (Active)", "kWh", 0),
+                field<DataType::float32>(power_active, Scaling::none, WordOrder::LowFirst, "Total Power (Active)", "W", 0),
+                field<DataType::float32>(l1_power_active, Scaling::none, WordOrder::LowFirst, "L1 Power (Active)", "W", 0),
+                field<DataType::float32>(l2_power_active, Scaling::none, WordOrder::LowFirst, "L2 Power (Active)", "W", 0),
+                field<DataType::float32>(l3_power_active, Scaling::none, WordOrder::LowFirst, "L3 Power (Active)", "W", 0),
+                field<DataType::float32>(voltage_ln, Scaling::none, WordOrder::LowFirst, "Voltage L-N", "V", 0),
+                field<DataType::float32>(l1n_voltage, Scaling::none, WordOrder::LowFirst, "Voltage L1-N", "V", 0),
+                field<DataType::float32>(l2n_voltage, Scaling::none, WordOrder::LowFirst, "Voltage L2-N", "V", 0),
+                field<DataType::float32>(l3n_voltage, Scaling::none, WordOrder::LowFirst, "Voltage L3-N", "V", 0),
+                field<DataType::float32>(voltage_ll, Scaling::none, WordOrder::LowFirst, "Voltage LL", "V", 0),
+                field<DataType::float32>(l12_voltage, Scaling::none, WordOrder::LowFirst, "Voltage L1-L2", "V", 0),
+                field<DataType::float32>(l23_voltage, Scaling::none, WordOrder::LowFirst, "Voltage L2-L3", "V", 0),
+                field<DataType::float32>(l31_voltage, Scaling::none, WordOrder::LowFirst, "Voltage L3-L1", "V", 0),
+                field<DataType::float32>(frequency, Scaling::none, WordOrder::LowFirst, "Frequency", "", 0)
+            ),
+            block("block1100", 1100,
+                field<DataType::float32>(l1_energy_active, Scaling::none, WordOrder::LowFirst, "L1 Energy (Active)", "kWh", 0),
+                field<DataType::float32>(l2_energy_active, Scaling::none, WordOrder::LowFirst, "L2 Energy (Active)", "kWh", 0),
+                field<DataType::float32>(l3_energy_active, Scaling::none, WordOrder::LowFirst, "L3 Energy (Active)", "kWh", 0),
+                field<DataType::float32>(l1_import_energy_active, Scaling::none, WordOrder::LowFirst, "L1 Imported Energy (Active)", "kWh", 0),
+                field<DataType::float32>(l2_import_energy_active, Scaling::none, WordOrder::LowFirst, "L2 Imported Energy (Active)", "kWh", 0),
+                field<DataType::float32>(l3_import_energy_active, Scaling::none, WordOrder::LowFirst, "L3 Imported Energy (Active)", "kWh", 0),
+                field<DataType::float32>(export_energy_active, Scaling::none, WordOrder::LowFirst, "Exported Energy (Active)", "kWh", 0),
+                field<DataType::float32>(export_energy_active_nr, Scaling::none, WordOrder::LowFirst, "Exported Energy NR (Active)", "kWh", 0),
+                field<DataType::float32>(l1_export_energy_active, Scaling::none, WordOrder::LowFirst, "L1 Exported Energy (Active)", "kWh", 0),
+                field<DataType::float32>(l2_export_energy_active, Scaling::none, WordOrder::LowFirst, "L2 Exported Energy (Active)", "kWh", 0),
+                field<DataType::float32>(l3_export_energy_active, Scaling::none, WordOrder::LowFirst, "L3 Exported Energy (Active)", "kWh", 0),
+                field<DataType::float32>(energy_reactive, Scaling::none, WordOrder::LowFirst, "Energy (Reactive)", "kWh", 0),
+                field<DataType::float32>(l1_energy_reactive, Scaling::none, WordOrder::LowFirst, "L1 Energy (Reactive)", "kWh", 0),
+                field<DataType::float32>(l2_energy_reactive, Scaling::none, WordOrder::LowFirst, "L2 Energy (Reactive)", "kWh", 0),
+                field<DataType::float32>(l3_energy_reactive, Scaling::none, WordOrder::LowFirst, "L3 Energy (Reactive)", "kWh", 0),
+                field<DataType::float32>(energy_apparent, Scaling::none, WordOrder::LowFirst, "Energy (Apparent)", "kWh", 0),
+                field<DataType::float32>(l1_energy_apparent, Scaling::none, WordOrder::LowFirst, "L1 Energy (Apparent)", "kWh", 0),
+                field<DataType::float32>(l2_energy_apparent, Scaling::none, WordOrder::LowFirst, "L2 Energy (Apparent)", "kWh", 0),
+                field<DataType::float32>(l3_energy_apparent, Scaling::none, WordOrder::LowFirst, "L3 Energy (Apparent)", "kWh", 0),
+                field<DataType::float32>(power_factor, Scaling::none, WordOrder::LowFirst, "Power Factor", "", 0),
+                field<DataType::float32>(l1_power_factor, Scaling::none, WordOrder::LowFirst, "L1 Power Factor", "", 0),
+                field<DataType::float32>(l2_power_factor, Scaling::none, WordOrder::LowFirst, "L2 Power Factor", "", 0),
+                field<DataType::float32>(l3_power_factor, Scaling::none, WordOrder::LowFirst, "L3 Power Factor", "", 0),
+                field<DataType::float32>(power_reactive, Scaling::none, WordOrder::LowFirst, "Power (Reactive)", "VAr", 0),
+                field<DataType::float32>(l1_power_reactive, Scaling::none, WordOrder::LowFirst, "L1 Power (Reactive)", "VAr", 0),
+                field<DataType::float32>(l2_power_reactive, Scaling::none, WordOrder::LowFirst, "L2 Power (Reactive)", "VAr", 0),
+                field<DataType::float32>(l3_power_reactive, Scaling::none, WordOrder::LowFirst, "L3 Power (Reactive)", "VAr", 0),
+                field<DataType::float32>(power_apparent, Scaling::none, WordOrder::LowFirst, "Power (Apparent)", "VA", 0),
+                field<DataType::float32>(l1_power_apparent, Scaling::none, WordOrder::LowFirst, "L1 Power (Apparent)", "VA", 0),
+                field<DataType::float32>(l2_power_apparent, Scaling::none, WordOrder::LowFirst, "L2 Power (Apparent)", "VA", 0),
+                field<DataType::float32>(l3_power_apparent, Scaling::none, WordOrder::LowFirst, "L3 Power (Apparent)", "VA", 0),
+                field<DataType::float32>(l1_current, Scaling::none, WordOrder::LowFirst, "L1 Current", "A", 0),
+                field<DataType::float32>(l2_current, Scaling::none, WordOrder::LowFirst, "L2 Current", "A", 0),
+                field<DataType::float32>(l3_current, Scaling::none, WordOrder::LowFirst, "L3 Current", "A", 0),
+                field<DataType::float32>(demand_power_active, Scaling::none, WordOrder::LowFirst, "Demand Power (Active)", "W", 0),
+                field<DataType::float32>(minimum_demand_power_active, Scaling::none, WordOrder::LowFirst, "Minimum Demand Power (Active)", "W", 0),
+                field<DataType::float32>(maximum_demand_power_active, Scaling::none, WordOrder::LowFirst, "Maximum Demand Power (Active)", "W", 0),
+                field<DataType::float32>(demand_power_apparent, Scaling::none, WordOrder::LowFirst, "Demand Power (Apparent)", "VA", 0),
+                field<DataType::float32>(l1_demand_power_active, Scaling::none, WordOrder::LowFirst, "L1 Demand Power (Active)", "W", 0),
+                field<DataType::float32>(l2_demand_power_active, Scaling::none, WordOrder::LowFirst, "L2 Demand Power (Active)", "W", 0),
+                field<DataType::float32>(l3_demand_power_active, Scaling::none, WordOrder::LowFirst, "L3 Demand Power (Active)", "W", 0)
+            ),
+            block("block1600", 1600,
+                field<DataType::uint32>(passcode, Scaling::none, WordOrder::LowFirst, "Passcode", "", 1234),
+                field<DataType::int16>(ct_current, Scaling::none, WordOrder::HighFirst, "CT Current", "A", 5),
+                field<DataType::int16>(ct_current_l1, Scaling::none, WordOrder::HighFirst, "L1 CT Current", "A", 5),
+                field<DataType::int16>(ct_current_l2, Scaling::none, WordOrder::HighFirst, "L2 CT Current", "A", 5),
+                field<DataType::int16>(ct_current_l3, Scaling::none, WordOrder::HighFirst, "L3 CT Current", "A", 5),
+                field<DataType::int16>(ct_inverted, Scaling::none, WordOrder::HighFirst, "CT Inverted", "", 0),
+                field<DataType::int16>(measurement_averaging, Scaling::none, WordOrder::HighFirst, "Measurement Averaging", "", 0),
+                field<DataType::int16>(power_scale, Scaling::none, WordOrder::HighFirst, "Power Scale", "", 0),
+                field<DataType::int16>(demand_period, Scaling::none, WordOrder::HighFirst, "Demand Period", "Minute", 15),
+                field<DataType::int16>(demand_subintervals, Scaling::none, WordOrder::HighFirst, "Demand Subintervals", "", 0),
+                field<DataType::int16>(l1_power_energy_adj, Scaling::none, WordOrder::HighFirst, "L1 Power/Energy adjustment", "", 10000),
+                field<DataType::int16>(l2_power_energy_adj, Scaling::none, WordOrder::HighFirst, "L2 Power/Energy adjustment", "", 10000),
+                field<DataType::int16>(l3_power_energy_adj, Scaling::none, WordOrder::HighFirst, "L3 Power/Energy adjustment", "", 10000),
+                field<DataType::int16>(l1_ct_phase_angle_adj, Scaling::none, WordOrder::HighFirst, "L1 CT Phase Angle adjustment", "", static_cast<uint32_t>(-1000)),
+                field<DataType::int16>(l2_ct_phase_angle_adj, Scaling::none, WordOrder::HighFirst, "L2 CT Phase Angle adjustment", "", static_cast<uint32_t>(-1000)),
+                field<DataType::int16>(l3_ct_phase_angle_adj, Scaling::none, WordOrder::HighFirst, "L3 CT Phase Angle adjustment", "", static_cast<uint32_t>(-1000)),
+                field<DataType::int16>(minimum_power_reading, Scaling::none, WordOrder::HighFirst, "Minimum Power Reading", "", 0),
+                field<DataType::int16>(phase_offset, Scaling::none, WordOrder::HighFirst, "Phase Offset", "", 120),
+                field<DataType::int16>(reset_energy, Scaling::none, WordOrder::HighFirst, "Reset Energy", "", 0),
+                field<DataType::int16>(reset_demand, Scaling::none, WordOrder::HighFirst, "Reset Demand", "", 0),
+                field<DataType::int16>(current_scale, Scaling::none, WordOrder::HighFirst, "Current Scale", "", 20000),
+                field<DataType::int16>(io_pin_mode, Scaling::none, WordOrder::HighFirst, "IO Pin Mode", "", 0)
+            ),
+            block("block1650", 1650,
+                field<DataType::int16>(apply_config, Scaling::none, WordOrder::HighFirst, "Apply Config", "", 0),
+                field<DataType::int16>(modbus_address, Scaling::none, WordOrder::LowFirst, "Modbus Address", "", 0),
+                field<DataType::int16>(baud_rate, Scaling::none, WordOrder::HighFirst, "Baud Rate", "", 0),
+                field<DataType::int16>(parity_mode, Scaling::none, WordOrder::HighFirst, "Parity Mode", "", 0),
+                field<DataType::int16>(modbus_mode, Scaling::none, WordOrder::HighFirst, "Modbus Mode", "", 0),
+                field<DataType::int16>(message_delay, Scaling::ten, WordOrder::HighFirst, "Message Delay", "ms", 0)
+            ),
+            block("block1700", 1700,
+                field<DataType::uint32>(serial_number, Scaling::none, WordOrder::LowFirst, "Serial Number", "", 0),
+                field<DataType::uint32>(uptime, Scaling::none, WordOrder::LowFirst, "Uptime", "s", 0),
+                field<DataType::uint32>(total_uptime, Scaling::none, WordOrder::LowFirst, "Total Uptime", "s", 0),
+                field<DataType::int16>(wattnode_model, Scaling::none, WordOrder::HighFirst, "Wattnode Model", "", 202),
+                field<DataType::int16>(firmware_version, Scaling::none, WordOrder::HighFirst, "Firmware Version", "", 31),
+                field<DataType::int16>(options, Scaling::none, WordOrder::HighFirst, "Options", "", 0),
+                field<DataType::int16>(error_status, Scaling::none, WordOrder::HighFirst, "Error Status", "", 0),
+                field<DataType::int16>(power_fail_count, Scaling::none, WordOrder::HighFirst, "Power Fail Count", "", 0),
+                field<DataType::int16>(crc_error_count, Scaling::none, WordOrder::HighFirst, "CRC Error Count", "", 0),
+                field<DataType::int16>(frame_error_count, Scaling::none, WordOrder::HighFirst, "Frame Error Count", "", 0),
+                field<DataType::int16>(packet_error_count, Scaling::none, WordOrder::HighFirst, "Packet Error Count", "", 0),
+                field<DataType::int16>(overrun_count, Scaling::none, WordOrder::HighFirst, "Overrun Count", "", 0),
+                field<DataType::int16>(error_status_1, Scaling::none, WordOrder::HighFirst, "Error Status 1", "", 0),
+                field<DataType::int16>(error_status_2, Scaling::none, WordOrder::HighFirst, "Error Status 2", "", 0),
+                field<DataType::int16>(error_status_3, Scaling::none, WordOrder::HighFirst, "Error Status 3", "", 0),
+                field<DataType::int16>(error_status_4, Scaling::none, WordOrder::HighFirst, "Error Status 4", "", 0),
+                field<DataType::int16>(error_status_5, Scaling::none, WordOrder::HighFirst, "Error Status 5", "", 0),
+                field<DataType::int16>(error_status_6, Scaling::none, WordOrder::HighFirst, "Error Status 6", "", 0),
+                field<DataType::int16>(error_status_7, Scaling::none, WordOrder::HighFirst, "Error Status 7", "", 0),
+                field<DataType::int16>(error_status_8, Scaling::none, WordOrder::HighFirst, "Error Status 8", "", 0)
+            ),
+            block("block1736", 1736,
+                field<DataType::uint32>(unknown1, Scaling::none, WordOrder::LowFirst, "Unknown 1", "", 0)
+            ),
+            block("block2127", 2127,
+                field<DataType::uint16>(unknown2, Scaling::none, WordOrder::HighFirst, "Unknown 2", "", 1)
+            )
+        );
     // ---- Device factory and indexed metadata access ----
     // SchemaApi provides DeviceType and O(1) description<R>().
-    static const Metadata metadata;
     // This register mirrors the protocol server ID assigned by Server<Schema>.
     static constexpr RegisterId server_id_register = modbus_address;
     static DeviceType makeDevice(uint32_t serialNumber);
 };
 
 // Inline constexpr definition makes metadata available in every translation unit.
-// C++17 requires this definition after the schema is complete.
-inline constexpr WattNode::Metadata WattNode::metadata = WattNode::makeMetadata();
 static_assert(WattNode::metadata.valid, "Invalid WattNode register schema");
 
 static_assert(WattNode::description<WattNode::power_active>().address == 1008,
