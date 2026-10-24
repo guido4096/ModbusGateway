@@ -74,6 +74,8 @@ def main():
         subprocess.run([str(binary)],check=True)
         script=subprocess.run([sys.executable,str(ROOT/'tests/conversion_audit.py'),str(NEW/'convert_em24_e1_to_wattnode.cpp')],text=True)
         if script.returncode: raise AssertionError('Conversion source audit failed')
+    print('Running executable conversion comparison...')
+    subprocess.run([sys.executable,str(ROOT/'tests/conversion_equivalence.py'),str(NEW)],check=True)
     if discrepancies: raise AssertionError(f'{len(discrepancies)} metadata mismatches')
     print('PASS: native offline regression gates completed')
 
