@@ -44,7 +44,16 @@ struct Reordered : SchemaApi<Reordered> {
 int main() {
     Device<TestSchema> device;
     device.set<TestSchema::value>(-14795);
-    assert(device.allValuesAsString().find("value=-1479.5 W") != String::npos);
+    assert(device.allValuesAsString() ==
+           "Block first\r\n  value=-1479.5 W\r\n"
+           "Block next\r\n  adjacent=7\r\n"
+           "Block last\r\n  distant=9\r\n");
+    const auto& descriptor = TestSchema::description<TestSchema::value>();
+    assert(decode<int32_t>(device.rawWords(), descriptor) == -14795);
+    assert(decode<float>(device.rawWords(), descriptor) == -1479.5f);
+    uint16_t encoded[2]{};
+    encode<int32_t>(encoded, descriptor, -14795);
+    assert(encoded[0] == 0xc635 && encoded[1] == 0xffff);
     uint16_t words[4] = {0xaaaa, 0xbbbb, 0xcccc, 0xdddd};
     assert(device.readHoldingRegisters(101, 2, words)); // half field and adjacent block
     assert(words[0] == 0xffff && words[1] == 7);

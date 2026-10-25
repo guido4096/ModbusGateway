@@ -133,3 +133,38 @@ HTTP handlers collect register responses inside a short DataAccess scope, releas
 the guard, then send the response. Strategy handlers also release the guard
 before writing preferences to flash. The response describes the register state
 captured when the strategy was set.
+
+## Reading the Modbus code
+
+Start with a device header in `src/devices/` to see a concrete layout, then read
+the public API of `Device`, `Client` or `Server`. The schema builder can be read
+after those interfaces: its nested lambdas implement the compile-time layout,
+rather than the runtime request flow.
+
+| File | Responsibility | Useful entry points |
+| --- | --- | --- |
+| `register_schema.h` | Declare and validate immutable register layouts | `field`, `block`, `makeDeviceSchema` |
+| `register_codec.h` | Convert raw values to and from Modbus words | `decodeTyped`, `encodeTyped`, `loadBits`, `storeBits` |
+| `device.h` | Store words and validate address ranges | `get`, `set`, `readHoldingRegisters`, `writeHoldingRegisters` |
+| `data_access.h` | Hold an owner's register lock for one scope | constructor and destructor |
+| `client.h` | Schedule TCP reads and publish validated replies | `submit`, `handleData`, `validResponse` |
+| `server.h` | Validate protocol requests and serve cached words | `processRequest`, `validateRequest`, `readRegisters`, `writeRegisters` |
+| `diagnostics.h` | Synchronize counters and the log ring | `Statistics`, `Log` |
+| `device_diagnostics.h` | Format register values and layout descriptions | `formatRegisterValue`, `formatDeviceValues`, `printDeviceDescription` |
+| `definitions.h` | Collect the shared interfaces in one include | includes only |
+
+`Schema` denotes a device layout type. A register template argument denotes an
+enum ID known at compile time; `value_type<Register>` derives its C++ value type
+from that layout. `typename` and the dependent-call `template` keyword are C++
+syntax qualifiers, not extra runtime operations. Typed access returns raw native
+values; engineering scaling is applied explicitly by conversion or diagnostics.
+
+The two runtime flows are:
+
+- Incoming request: server validation, register read/write under DataAccess, response.
+- Outgoing read: client range validation, request reservation, transport enqueue,
+  callback validation, register publication under DataAccess, update notification.
+
+The request-table mutex protects tokens and slots; DataAccess protects register
+words. Neither lock is held while enqueueing a transport request. Logs and
+statistics own their separate synchronization.

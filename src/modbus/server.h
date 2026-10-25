@@ -7,144 +7,194 @@
  * @note      Modbus server backed by a device register schema
  */
 #pragma once
-#include <mutex>
 #include <array>
 #include <cstdint>
-#include <cstdio>
-#include <utility>
+#include <mutex>
 #include <type_traits>
+#include <utility>
 #include "modbus/definitions.h"
 #include "ModbusServer.h"
 
 namespace modbus_gateway {
-// Detection idiom: a schema may nominate a logical register that mirrors
-// the protocol server ID. No such register is required for other devices;
-// the binding is resolved by if constexpr at server instantiation.
-template<typename T, typename = void>
+// Some schemas mirror the protocol server ID in a logical register. Resolve
+// that optional binding at compile time; other schemas need no such register.
+template<typename Schema, typename = void>
 struct HasServerIdRegister : std::false_type {};
-template<typename T>
-struct HasServerIdRegister<T, std::void_t<decltype(T::server_id_register)>> : std::true_type {};
 
-/** Modbus server endpoint backed by Device<Schema> raw register words.
- * Register descriptions govern layout and typed application access; FC03,
- * FC06 and FC16 operate on address ranges supplied at runtime by the peer.
- * All request processing uses a DataAccess guard for atomic buffer updates.
- */
-template<typename MODBUS_TYPE>
+template<typename Schema>
+struct HasServerIdRegister<Schema, std::void_t<decltype(Schema::server_id_register)>>
+    : std::true_type {};
+
+// FC03, FC06 and FC16 expose Device's raw words. Typed application access is
+// provided separately through DataAccess; protocol requests never apply scaling.
+template<typename DeviceSchema>
 class Server {
 public:
-    using Schema = MODBUS_TYPE;
+    using Schema = DeviceSchema;
     using RegisterType = typename Schema::RegisterId;
     using DeviceType = Device<Schema>;
 
-    // The protocol server ID selects eModbus worker registrations. Factory
-    // arguments are independent device-instance defaults (e.g. WattNode
-    // serial number), forwarded unchanged to Schema::makeDevice().
+    // Factory arguments belong to the device instance, independently of its
+    // protocol ID (for example, a serial number forwarded to makeDevice()).
     template<typename... DeviceArgs>
-    Server(ModbusServer& rtu, uint8_t server_id, DeviceArgs&&... device_args)
-        : _device(Schema::makeDevice(std::forward<DeviceArgs>(device_args)...)), _rtu(rtu) {
-        _device.setServerId(server_id);
+    Server(ModbusServer& transport, uint8_t serverId, DeviceArgs&&... deviceArgs)
+        : _device(Schema::makeDevice(std::forward<DeviceArgs>(deviceArgs)...)),
+          _transport(transport) {
+        _device.setServerId(serverId);
         if constexpr (HasServerIdRegister<Schema>::value) {
-            _device.template set<Schema::server_id_register>(server_id);
+            _device.template set<Schema::server_id_register>(serverId);
         }
-        // eModbus accepts instance-bound std::function workers. Reject an
-        // occupied endpoint instead of silently replacing another server.
-        for (auto fc : {READ_HOLD_REGISTER, WRITE_HOLD_REGISTER, WRITE_MULT_REGISTERS})
-            if (_rtu.isServerFor(server_id, fc)) {
-                Serial.println("Modbus server ID/function already registered");
-                return;
-            }
-        _rtu.registerWorker(server_id, READ_HOLD_REGISTER,
-            [this](ModbusMessage req) { return Process(req, READ_HOLD_REGISTER); });
-        _rtu.registerWorker(server_id, WRITE_HOLD_REGISTER,
-            [this](ModbusMessage req) { return Process(req, WRITE_HOLD_REGISTER); });
-        _rtu.registerWorker(server_id, WRITE_MULT_REGISTERS,
-            [this](ModbusMessage req) { return Process(req, WRITE_MULT_REGISTERS); });
-        _registered = true;
+        registerWorkers(serverId);
     }
+
     ~Server() {
-        // Owners must stop processing requests before destroying this object.
-        if (_registered)
-            for (auto fc : {READ_HOLD_REGISTER, WRITE_HOLD_REGISTER, WRITE_MULT_REGISTERS})
-                _rtu.unregisterWorker(_device.serverId(), fc);
+        // Stop request processing before destruction: an in-flight callback
+        // still refers to this instance even after its worker is unregistered.
+        if (!_registered) {
+            return;
+        }
+        for (auto function : {READ_HOLD_REGISTER, WRITE_HOLD_REGISTER, WRITE_MULT_REGISTERS}) {
+            _transport.unregisterWorker(_device.serverId(), function);
+        }
     }
+
     bool registered() const { return _registered; }
 
-
-    // Diagnostics own their synchronization and do not acquire the register lock.
+    // Diagnostics synchronize themselves without taking the register lock.
     String getStatistics() { return _statistics.allValuesAsString(); }
     String getLog() { return _log.allValuesAsString(); }
     void logMessage(const String& message) { _log.addString(message); }
 
 private:
-    // Request coordinates are Modbus *word* addresses. Parse and validate
-    // the full PDU before acquiring the device lock or changing any values.
-    // FC06 encodes a single value in the field otherwise used as word count.
-    ModbusMessage Process(ModbusMessage request, FunctionCode fc) {
-        ModbusMessage response;
-        _statistics.recordCall();
-        // A rejected request uses a Modbus exception response rather than
-        // silently returning truncated data or applying a partial write.
-        const auto error = [&](Error code) {
-            _statistics.recordFailure();
-            response.setError(request.getServerID(), request.getFunctionCode(), code);
-            return response;
-        };
-        if (request.size() < 6) return error(ILLEGAL_DATA_VALUE);
+    static constexpr uint16_t max_read_words = 125;
+    static constexpr uint16_t max_write_words = 123;
+    static constexpr std::size_t request_header_bytes = 6;
 
+    struct Request {
         uint16_t address = 0;
-        uint16_t count_or_value = 0;
-        request.get(2, address);
-        request.get(4, count_or_value);
-        const uint16_t count = (fc == WRITE_HOLD_REGISTER) ? 1 : count_or_value;
-        const uint16_t limit = fc == READ_HOLD_REGISTER ? 125 : 123;
-        if (fc == WRITE_HOLD_REGISTER) {
-            if (request.size() != 6) return error(ILLEGAL_DATA_VALUE);
-        } else if (count == 0 || count > limit) {
-            return error(ILLEGAL_DATA_VALUE);
-        }
-        if (uint32_t(address) + count > 65536u) return error(ILLEGAL_DATA_ADDRESS);
-        if (fc == WRITE_MULT_REGISTERS &&
-            (request.size() != 7u + 2u*count || request.data()[6] != count*2u))
-            return error(ILLEGAL_DATA_VALUE);
-        if (fc == READ_HOLD_REGISTER && request.size() != 6)
-            return error(ILLEGAL_DATA_VALUE);
+        uint16_t wordCount = 0;
+        // FC06 carries a value where FC03/FC16 carry the register count.
+        uint16_t valueOrCount = 0;
+    };
 
-        // Stage the complete response/write in a bounded stack buffer. The
-        // Device raw-word API validates every address before copying, so a
-        // request crossing an undefined block gap has no partial write.
-        std::array<uint16_t, 125> words{};
+    void registerWorkers(uint8_t serverId) {
+        // Reject occupied endpoints rather than replacing another instance.
+        for (auto function : {READ_HOLD_REGISTER, WRITE_HOLD_REGISTER, WRITE_MULT_REGISTERS}) {
+            if (_transport.isServerFor(serverId, function)) {
+                Serial.println("Modbus server ID/function already registered");
+                return;
+            }
+        }
+        _transport.registerWorker(serverId, READ_HOLD_REGISTER,
+            [this](ModbusMessage message) { return processRequest(message, READ_HOLD_REGISTER); });
+        _transport.registerWorker(serverId, WRITE_HOLD_REGISTER,
+            [this](ModbusMessage message) { return processRequest(message, WRITE_HOLD_REGISTER); });
+        _transport.registerWorker(serverId, WRITE_MULT_REGISTERS,
+            [this](ModbusMessage message) { return processRequest(message, WRITE_MULT_REGISTERS); });
+        _registered = true;
+    }
+
+    ModbusMessage processRequest(ModbusMessage& message, FunctionCode function) {
+        _statistics.recordCall();
+
+        Request request;
+        const Error error = validateRequest(message, function, request);
+        if (error != SUCCESS) {
+            return errorResponse(message, error);
+        }
+        if (function == READ_HOLD_REGISTER) {
+            return readRegisters(message, request);
+        }
+        return writeRegisters(message, function, request);
+    }
+
+    // Validate the complete frame before taking the register lock. Retain the
+    // validation order so malformed requests keep their existing exception code.
+    static Error validateRequest(ModbusMessage& message, FunctionCode function, Request& request) {
+        if (message.size() < request_header_bytes) {
+            return ILLEGAL_DATA_VALUE;
+        }
+        message.get(2, request.address);
+        message.get(4, request.valueOrCount);
+        request.wordCount = function == WRITE_HOLD_REGISTER ? 1 : request.valueOrCount;
+
+        const uint16_t limit = function == READ_HOLD_REGISTER ? max_read_words : max_write_words;
+        if (function == WRITE_HOLD_REGISTER) {
+            if (message.size() != request_header_bytes) {
+                return ILLEGAL_DATA_VALUE;
+            }
+        } else if (request.wordCount == 0 || request.wordCount > limit) {
+            return ILLEGAL_DATA_VALUE;
+        }
+        if (uint32_t(request.address) + request.wordCount > 65536u) {
+            return ILLEGAL_DATA_ADDRESS;
+        }
+        if (function == WRITE_MULT_REGISTERS &&
+            (message.size() != 7u + 2u * request.wordCount ||
+             message.data()[6] != 2u * request.wordCount)) {
+            return ILLEGAL_DATA_VALUE;
+        }
+        if (function == READ_HOLD_REGISTER && message.size() != request_header_bytes) {
+            return ILLEGAL_DATA_VALUE;
+        }
+        return SUCCESS;
+    }
+
+    ModbusMessage readRegisters(ModbusMessage& message, const Request& request) {
+        std::array<uint16_t, max_read_words> words{};
         DataAccess<Server> access(*this);
-        if (fc == READ_HOLD_REGISTER) {
-            if (!access.readHoldingRegisters(address, count, words.data()))
-                return error(ILLEGAL_DATA_ADDRESS);
-            response.add(request.getServerID(), request.getFunctionCode(), static_cast<uint8_t>(count*2));
-            for (std::size_t i=0; i<count; ++i) response.add(words[i]);
-            _statistics.recordRead();
-            return response;
+        if (!access.readHoldingRegisters(request.address, request.wordCount, words.data())) {
+            return errorResponse(message, ILLEGAL_DATA_ADDRESS);
         }
-        if (fc == WRITE_HOLD_REGISTER) {
-            words[0] = count_or_value;
-        } else {
-            for (std::size_t i=0; i<count; ++i)
-                request.get(7 + 2*i, words[i]);
+
+        ModbusMessage response;
+        response.add(message.getServerID(), message.getFunctionCode(),
+                     static_cast<uint8_t>(request.wordCount * 2));
+        for (std::size_t wordIndex = 0; wordIndex < request.wordCount; ++wordIndex) {
+            response.add(words[wordIndex]);
         }
-        if (!access.writeHoldingRegisters(address, count, words.data()))
-            return error(ILLEGAL_DATA_ADDRESS);
-        _statistics.recordWrite();
-        // FC06 echoes address and value; FC16 echoes address and number of words.
-        response.add(request.getServerID(), request.getFunctionCode());
-        response.add(address);
-        response.add(fc == WRITE_HOLD_REGISTER ? count_or_value : count);
+        _statistics.recordRead();
         return response;
     }
 
+    ModbusMessage writeRegisters(ModbusMessage& message, FunctionCode function, const Request& request) {
+        // Stage all words and validate their full address range before any
+        // register changes. Requests crossing an undefined gap cannot partly apply.
+        std::array<uint16_t, max_read_words> words{};
+        DataAccess<Server> access(*this);
+        if (function == WRITE_HOLD_REGISTER) {
+            words[0] = request.valueOrCount;
+        } else {
+            for (std::size_t wordIndex = 0; wordIndex < request.wordCount; ++wordIndex) {
+                message.get(7 + 2 * wordIndex, words[wordIndex]);
+            }
+        }
+        if (!access.writeHoldingRegisters(request.address, request.wordCount, words.data())) {
+            return errorResponse(message, ILLEGAL_DATA_ADDRESS);
+        }
+        _statistics.recordWrite();
+
+        // FC06 echoes the written value; FC16 echoes the number of words.
+        ModbusMessage response;
+        response.add(message.getServerID(), message.getFunctionCode());
+        response.add(request.address);
+        response.add(function == WRITE_HOLD_REGISTER ? request.valueOrCount : request.wordCount);
+        return response;
+    }
+
+    ModbusMessage errorResponse(ModbusMessage& request, Error error) {
+        _statistics.recordFailure();
+        ModbusMessage response;
+        response.setError(request.getServerID(), request.getFunctionCode(), error);
+        return response;
+    }
+
+    template<typename> friend class DataAccess;
     Statistics _statistics;
     Log _log;
-    template<typename> friend class DataAccess;
     DeviceType _device;
     bool _registered = false;
-    ModbusServer& _rtu;
+    ModbusServer& _transport;
     mutable std::timed_mutex _Mutex;
 };
 } // namespace modbus_gateway
