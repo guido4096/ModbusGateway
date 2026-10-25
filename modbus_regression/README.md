@@ -1,31 +1,26 @@
-# Modbus gateway native regression tests
+# Native regression tests
 
-This suite checks the register schemas, Modbus wire encoding and
-EM24_E1-to-WattNode conversion, including the three optimizer strategies.
-
-Run from the PlatformIO project root:
+From the project root:
 
 ```sh
 python3 modbus_regression/tests/run.py --project-src src
 ```
 
-Requires Python 3 and a native C++17 compiler (`clang++` or `g++`). It does not
-flash the ESP32, change `platformio.ini`, or require Modbus network hardware.
+Requires Python 3 and a native C++17 compiler (`clang++` or `g++`). The shared
+runner in `tests/run.py` runs `devices/run.py` for the shared catalog, then
+`plugin/run.py`, which chooses the tests
+and production sources for the selected implementation. No device names or
+converter paths are hardcoded in the shared runner.
 
-- `tests/schema_codec.cpp`: EM24_E1/WattNode invariants, reference wire words,
-  signed values, defaults, block coverage and invalid addresses. **Identical to master.**
-- `tests/optional_schema.cpp`: Alfen, SolarEdge and Optimizer layouts and wire
-  encodings, including signed values and battery power.
-- `tests/conversion.cpp`: the EM24-to-WattNode examples from master, extended with
-  strategy 1 (PV surplus), strategy 2 (grid only) and a return to strategy 0.
-- `tests/run.py`: builds and executes native tests in a temporary directory.
-- `stubs/Arduino.h`: minimal native definitions. **Identical to master.**
+`plugin/` contains register/schema checks, explicit reference Modbus words and
+conversion scenarios for the current implementation. It may differ between
+branches. Tests compile production converter headers, source, helpers and codecs;
+`stubs/modbus/` substitutes transport owners with mutex-protected devices.
+Lifecycle tests also compile the production plugin entry point with simulated
+HTTP, serial and network transports to check startup, scheduling and route behavior.
 
-The conversion harness substitutes only transport owners with native
-`Device` instances. It compiles `CopyDataFromMasterToSlave()` extracted from
-the current project converter; conversion formulas are not duplicated.
+Native tests do not cover hardware transports, Ethernet, OTA or real-time
+scheduling. Also run `pio run -e T-ETH-POE-PRO` for the firmware toolchain.
 
-These tests do not cover the transport layer, Ethernet, OTA, threading or the
-ESP32 build. Use `pio run -e T-ETH-POE-PRO` separately.
-
-Update reference assertions deliberately when device behavior changes.
+`devices/` tests reusable manufacturer-defined schemas on every branch.
+Availability in this catalog is independent of the devices selected by a plugin.

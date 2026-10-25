@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Compile and exercise the current five-device gateway using a native C++17 compiler."""
+"""Run the selected implementation tests without concrete device dependencies."""
 import argparse
 import pathlib
-import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -13,32 +13,13 @@ TESTS = ROOT / "tests"
 STUBS = ROOT / "stubs"
 
 
-def conversion_body(source):
-    """Extract the real method definition; avoid compiling networking dependencies."""
-    pattern = r"void\s+(?:modbus_gateway::)?ConvertEM24_E1ToWattNode::CopyDataFromMasterToSlave\s*\(\s*\)"
-    match = re.search(pattern, source)
-    if not match:
-        raise ValueError("Cannot find CopyDataFromMasterToSlave() in project converter")
-    start = source.find('{', match.end())
-    if start < 0:
-        raise ValueError("Converter has no body")
-    depth = 0
-    for index in range(start, len(source)):
-        if source[index] == '{':
-            depth += 1
-        elif source[index] == '}':
-            depth -= 1
-            if depth == 0:
-                return source[match.start():index + 1]
-    raise ValueError("Converter body has unmatched braces")
-
-
-def build(compiler, src, test, output, includes):
+def build(compiler, src, test, output, *, sources=(), flags=()):
+    test = pathlib.Path(test)
+    if not test.is_absolute():
+        test = TESTS / test
     command = [compiler, '-std=c++17', '-O1', '-Wall', '-Wextra',
-               '-UNDEBUG', '-I', str(STUBS), '-I', str(includes), '-I', str(src),
-               str(TESTS / test), str(src / 'em24_e1.cpp'), str(src / 'wattnode.cpp'),
-               str(src / 'alfen.cpp'), str(src / 'solaredge.cpp'), str(src / 'optimizer.cpp'),
-               '-o', str(output)]
+               '-UNDEBUG', '-I', str(STUBS), '-I', str(src), *flags,
+               str(test), *(str(path) for path in sources), '-o', str(output)]
     completed = subprocess.run(command, text=True, capture_output=True)
     if completed.returncode:
         print(completed.stdout + completed.stderr, file=sys.stderr)
@@ -50,31 +31,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--project-src', type=pathlib.Path, default=pathlib.Path('src'),
                         help='Gateway source directory (default: src)')
-    args = parser.parse_args()
-    src = args.project_src.resolve()
-    required = ('definitions.h', 'em24_e1.h', 'em24_e1.cpp', 'wattnode.h',
-                'wattnode.cpp', 'convert_em24_e1_to_wattnode.cpp',
-                'alfen.h', 'alfen.cpp', 'solaredge.h', 'solaredge.cpp',
-                'optimizer.h', 'optimizer.cpp')
-    missing = [name for name in required if not (src / name).is_file()]
-    if missing:
-        parser.error(f"Missing source files in {src}: {', '.join(missing)}")
+    src = parser.parse_args().project_src.resolve()
     compiler = shutil.which('clang++' if sys.platform == 'darwin' else 'g++')
     if not compiler:
         compiler = shutil.which('clang++') or shutil.which('g++')
     if not compiler:
         parser.error('C++17 compiler not found (clang++ or g++)')
-    body = conversion_body((src / 'convert_em24_e1_to_wattnode.cpp').read_text())
-    if not all(re.search(r'\b' + name + r'\b', body)
-               for name in ('Optimizer', 'SolarEdge', 'Alfen')):
-        parser.error('Expected a converter with Optimizer, SolarEdge and Alfen inputs')
     with tempfile.TemporaryDirectory(prefix='modbus-regression-') as path:
         temp = pathlib.Path(path)
-        build(compiler, src, 'schema_codec.cpp', temp / 'schema_codec', temp)
-        build(compiler, src, 'optional_schema.cpp', temp / 'optional_schema', temp)
-        (temp / 'conversion_body.inc').write_text(body + '\n')
-        build(compiler, src, 'conversion.cpp', temp / 'conversion', temp)
-    print('PASS: EM24_E1/WattNode/Alfen/SolarEdge/Optimizer native regression suite')
+        for suite in ('devices', 'plugin'):
+            runner = ROOT / suite / 'run.py'
+            if not runner.is_file():
+                parser.error(f'Missing test runner: {runner}')
+            runpy.run_path(str(runner))['run'](compiler, src, temp, build)
+    print('PASS: selected gateway plugin native regression suite')
 
 
 if __name__ == '__main__':
