@@ -7,7 +7,7 @@
  * @note      WattNode Modbus Definitions used by SolarEdge
  */
 #pragma once
-#include "definitions.h"
+#include "modbus/definitions.h"
 
 namespace modbus_gateway {
 

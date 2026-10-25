@@ -13,7 +13,7 @@
 #include <cstdio>
 #include <utility>
 #include <type_traits>
-#include "definitions.h"
+#include "modbus/definitions.h"
 #include "ModbusServerRTU.h"
 
 namespace modbus_gateway {

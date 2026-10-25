@@ -6,7 +6,7 @@
  * @date      04-Mar-2025
  * @note      WattNode Modbus Definitions used by SolarEdge
  */
-#include "wattnode.h"
+#include "devices/wattnode.h"
 
 namespace modbus_gateway {
 WattNode::DeviceType WattNode::makeDevice(uint32_t serialNumber) {

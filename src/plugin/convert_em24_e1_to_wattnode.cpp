@@ -7,7 +7,7 @@
  * @note      Convert and copy em24 data to the wattnode slave
  */
 #include "Arduino.h"
-#include "convert_em24_e1_to_wattnode.h"
+#include "plugin/convert_em24_e1_to_wattnode.h"
 #include "algorithm"
 #include <cmath>
 

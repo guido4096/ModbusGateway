@@ -7,7 +7,7 @@
  * @note      EM24 Modbus Definitions
  */
 #pragma once
-#include "definitions.h"
+#include "modbus/definitions.h"
 
 namespace modbus_gateway {
 

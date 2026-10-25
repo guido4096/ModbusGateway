@@ -1,5 +1,5 @@
-#include "em24_e1.h"
-#include "wattnode.h"
+#include "devices/em24_e1.h"
+#include "devices/wattnode.h"
 #include <cassert>
 #include <cmath>
 #include <cstdint>

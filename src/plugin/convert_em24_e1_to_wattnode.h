@@ -8,11 +8,11 @@
  */
 #pragma once
 
-#include "definitions.h"
-#include "em24_e1.h"
-#include "wattnode.h"
-#include "server.h"
-#include "client.h"
+#include "modbus/definitions.h"
+#include "devices/em24_e1.h"
+#include "devices/wattnode.h"
+#include "modbus/server.h"
+#include "modbus/client.h"
 namespace modbus_gateway
 {
     class ConvertEM24_E1ToWattNode

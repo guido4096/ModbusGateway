@@ -11,7 +11,7 @@
 #include <memory>
 #include <cstdint>
 #include <cstdio>
-#include "definitions.h"
+#include "modbus/definitions.h"
 #include "ModbusClientTCP.h"
 
 namespace modbus_gateway {

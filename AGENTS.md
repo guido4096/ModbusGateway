@@ -8,12 +8,23 @@ Repository: https://github.com/guido4096/ModbusGateway
 
 Two branches have intentionally different scopes:
 
-- `master`: EM24_E1, WattNode and EM24-to-WattNode conversion only.
-- `optimize-battery-usage`: additionally supports Alfen, SolarEdge and Optimizer.
+- `master` plugin: EM24_E1, WattNode and EM24-to-WattNode conversion only.
+- `optimize-battery-usage` plugin: additionally uses Alfen, SolarEdge and Optimizer.
 
-Do not introduce dependencies on the additional devices into `master`.
+Both branches share manufacturer-defined devices in `src/devices/`. Availability
+in the catalog does not activate a device: the plugin owns its use and transports.
+Do not introduce optimizer behavior into the `master` plugin.
 
 ## Architecture
+
+- `src/main.cpp` hosts board, network, HTTP and OTA services only.
+- `src/application/plugin.h` is the device-independent plugin contract.
+- Each branch supplies one complete implementation in `src/plugin/`, including
+  transport instances, polling, conversion, web routes and plugin-specific schemas.
+- Reusable manufacturer-defined schemas and factories live in `src/devices/`.
+- Alfen, SolarEdge, WattNode and EM24_E1 are shared; Optimizer stays plugin-specific.
+- Plugin code may intentionally differ or be duplicated between branches.
+- Keep shared host and Modbus infrastructure independent of concrete devices.
 
 - Register schemas are defined at compile time using `constexpr` metadata.
 - Validate register layouts, addresses, IDs and widths at compile time.
@@ -28,7 +39,9 @@ Do not introduce dependencies on the additional devices into `master`.
 
 - `modbus_regression/` tests the current implementation, not historical versions.
 - Do not introduce `baseline/` or `new/` copies of source files.
-- Keep common tests identical between branches wherever possible.
+- Keep common test infrastructure identical between branches.
+- Shared device tests and their runner belong in `modbus_regression/devices/`.
+- Implementation-specific tests and their runner belong in `modbus_regression/plugin/`.
 - Add branch-specific tests only for branch-specific functionality.
 - Test actual production conversion code, not duplicated implementations.
 - Include explicit expected raw Modbus words, especially for 32-bit values and negative numbers.
