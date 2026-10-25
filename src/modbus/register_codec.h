@@ -69,9 +69,10 @@ inline void encodeTyped(uint16_t* words, typename Native<Type>::type value) {
     }
 }
 
-// Generic runtime codecs are used where the descriptor is selected at
-// runtime (for example diagnostic formatting). Typed get/set below instead
-// instantiate decodeTyped/encodeTyped with compile-time codec parameters.
+// Runtime descriptor API: decode<float>() returns engineering units (scaled).
+// Integral decode and encode operate on raw values; encode<float>() writes raw
+// float bits, so it is not an inverse of scaled decode<float>(). Typed Device
+// get/set always use raw native values through decodeTyped/encodeTyped.
 template<typename T>
 T decode(const uint16_t* data, const RegisterDescription& r) {
     uint32_t bits = loadBits(data, r.words, r.high_word_first);

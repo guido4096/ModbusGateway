@@ -7,34 +7,34 @@
  * @note      Object that acts as a master to retrieve values from the meter
  */
 #pragma once
+#include <array>
+#include <atomic>
 #include <mutex>
-#include <memory>
 #include <cstdint>
 #include <cstdio>
 #include "modbus/definitions.h"
 #include "ModbusClientTCP.h"
 
 namespace modbus_gateway {
-/** Asynchronous Modbus TCP reader and local register cache.
- * A schema supplies immutable addresses/types, while Device<Schema> stores
- * the latest raw values received from the remote meter. Requests enqueue
- * immediately and callbacks publish complete responses under DataAccess.
- * This class owns neither the transport nor its lifetime.
- */
+// The caller owns the transport and must keep it and this client alive until
+// accepted requests have completed. One client owns the callback pair per transport.
 template<class MODBUS_TYPE>
 class Client {
 public:
     using Schema = MODBUS_TYPE;
     using RegisterType = typename Schema::RegisterId;
     using DeviceType = Device<Schema>;
+    static constexpr std::size_t request_capacity = 32;
 
-    // eModbus uses one data/error handler pair per transport instance.
-    // Do not attach unrelated Client objects to the same transport without
-    // an external callback dispatcher.
     Client(ModbusClientTCP& tcp, const IPAddress& remote, uint16_t tcp_port, uint16_t tcp_server_id)
         : _tcp(tcp), _remote(remote), _tcp_port(tcp_port), _tcp_server_id(tcp_server_id) {
-        _tcp.onDataHandler(&Client::handleData);
-        _tcp.onErrorHandler(&Client::handleError);
+        _tcp.onDataHandler([this](ModbusMessage response, uint32_t token) { handleData(response, token); });
+        _tcp.onErrorHandler([this](Error error, uint32_t token) { handleError(error, token); });
+    }
+    ~Client() {
+        // Stop/drain the transport before destruction; then detach its callbacks.
+        _tcp.onDataHandler(nullptr);
+        _tcp.onErrorHandler(nullptr);
     }
     void connect() {
         _tcp.setTimeout(2000, 10);
@@ -42,7 +42,10 @@ public:
         _tcp.setTarget(_remote, _tcp_port);
     }
 
-    // IDs map directly into the constexpr register array; no name search.
+    // Consume before processing. A callback arriving during processing leaves
+    // another notification pending instead of having its flag cleared afterward.
+    bool consumeUpdated() { return _updated.exchange(false, std::memory_order_acq_rel); }
+
     bool readFromMeter(RegisterType first, RegisterType last) {
         const auto* a = DeviceType::describe(first);
         const auto* b = DeviceType::describe(last);
@@ -51,65 +54,77 @@ public:
     template<RegisterType First, RegisterType Last>
     bool readFromMeter() { return readFromMeter(First, Last); }
 
-    // A range uses the inclusive *logical* first/last registers. Convert
-    // to a single Modbus FC03 span, including every word of the last field.
-    // Only ranges within one declared block and <=125 words are supported.
     bool readFromMeter(const RegisterDescription& first, const RegisterDescription& last) {
         if (first.block != last.block || first.address > last.address) return false;
         const uint32_t count = uint32_t(last.address) + last.words - first.address;
         if (!count || count > 125) return false;
         return submit(first.block, first.address, static_cast<uint16_t>(count));
     }
-    // Human-readable name lookup is for operational convenience; hot paths
-    // should use the block index or explicit register IDs instead.
     bool readBlockFromMeter(const String& name) {
         const auto& blocks = DeviceType::blocks();
-        for (std::size_t i = 0; i < blocks.size(); ++i) {
-            if (name == blocks[i].name)
-                return blocks[i].words > 0 && blocks[i].words <= 125 &&
-                       submit(static_cast<uint16_t>(i), blocks[i].address, blocks[i].words);
-        }
+        for (std::size_t i = 0; i < blocks.size(); ++i)
+            if (name == blocks[i].name) return readBlockFromMeter(i);
         return false;
     }
-    // No string search for callers that already have a block index.
     bool readBlockFromMeter(std::size_t index) {
         const auto& blocks = DeviceType::blocks();
         if (index >= blocks.size()) return false;
         const auto& b = blocks[index];
-        return b.words > 0 && b.words <= 125 && submit(static_cast<uint16_t>(index), b.address, b.words);
+        return submit(static_cast<uint16_t>(index), b.address, b.words);
     }
 
-    template<typename> friend class DataAccess;
-    bool _dataRead = false;
-    DeviceType _device{};
-
 private:
-    // eModbus callbacks receive only a 32-bit token. A heap-owned context
-    // carries the request range and owning client across asynchronous calls;
-    // whichever terminal callback runs is responsible for freeing it.
+    // Tokens are sequence numbers, never pointers. Slots are released on every
+    // terminal callback and synchronous enqueue failure. Saturation rejects a
+    // request without allocating; capacity is independent of the transport queue.
     struct RequestContext {
-        Client* owner;
-        uint16_t block_index;
-        uint16_t start;
-        uint16_t count;
-        uint32_t transaction;
+        uint32_t token = 0;
+        uint16_t block_index = 0;
+        uint16_t start = 0;
+        uint16_t count = 0;
     };
-
-    // Transfer context ownership only after the transport accepts the
-    // request. A synchronous enqueue failure destroys it locally. Every
-    // accepted request must eventually produce exactly one terminal callback
-    // (or be explicitly cancelled) to avoid leaking its context.
+    uint32_t reserveRequest(uint16_t block, uint16_t address, uint16_t count) {
+        std::lock_guard<std::mutex> lock(_requestMutex);
+        for (auto& slot : _requests) {
+            if (slot.token) continue;
+            bool collision;
+            do {
+                ++_transaction;
+                collision = _transaction == 0;
+                for (const auto& used : _requests)
+                    if (used.token == _transaction) collision = true;
+            } while (collision);
+            slot = {_transaction, block, address, count};
+            return slot.token;
+        }
+        return 0;
+    }
+    RequestContext takeRequest(uint32_t token) {
+        std::lock_guard<std::mutex> lock(_requestMutex);
+        for (auto& slot : _requests) {
+            if (!token || slot.token != token) continue;
+            const auto result = slot;
+            slot = {};
+            return result;
+        }
+        return {};
+    }
     bool submit(uint16_t block, uint16_t address, uint16_t count) {
-#if defined(ARDUINO_ARCH_ESP32)
-        static_assert(sizeof(void*) == sizeof(uint32_t),
-                      "This ModbusClientTCP callback token requires a 32-bit pointer");
-#endif
-        auto context = std::unique_ptr<RequestContext>(new RequestContext{
-            this, block, address, count, _transaction++});
-        const auto token = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(context.get()));
+        const auto& blocks = DeviceType::blocks();
+        if (!count || count > 125 || block >= blocks.size()) return false;
+        const auto& b = blocks[block];
+        if (address < b.address || uint32_t(address) + count > uint32_t(b.address) + b.words)
+            return false;
         _statistics.recordCall();
+        const auto token = reserveRequest(block, address, count);
+        if (!token) {
+            _statistics.recordFailure();
+            _log.addString("Pending Modbus request capacity reached");
+            return false;
+        }
         const Error err = _tcp.addRequest(token, _tcp_server_id, READ_HOLD_REGISTER, address, count);
         if (err != SUCCESS) {
+            takeRequest(token);
             _statistics.recordFailure();
             ModbusError e(err);
             char buffer[180];
@@ -120,62 +135,57 @@ private:
             return false;
         }
         _statistics.recordSuccess();
-        context.release(); // callback owns it after a successful enqueue
         return true;
     }
-    // Rebuild unique ownership before touching client state. This callback
-    // must not race destruction of the owning Client or its transport.
-    static void handleError(Error error, uint32_t token) {
-        std::unique_ptr<RequestContext> ctx(reinterpret_cast<RequestContext*>(static_cast<uintptr_t>(token)));
-        if (!ctx) return;
-        Client& self = *ctx->owner;
-        self._statistics.recordError();
+    void handleError(Error error, uint32_t token) {
+        const auto ctx = takeRequest(token);
+        if (!ctx.token) return;
+        _statistics.recordError();
         ModbusError e(error);
         char buffer[180];
         snprintf(buffer, sizeof(buffer), "Error response: %02X - %s, block=%s, transaction=%lu",
                  (unsigned)(int)e, (const char*)e,
-                 DeviceType::blocks()[ctx->block_index].name, (unsigned long)ctx->transaction);
+                 DeviceType::blocks()[ctx.block_index].name, (unsigned long)ctx.token);
         Serial.println(buffer);
-        self._log.addString(buffer);
+        _log.addString(buffer);
     }
-    // Check framing and advertised byte count before accessing the payload.
-    // Decode network-order word bytes, then publish the entire range under
-    // one device lock so readers do not see half-updated 32-bit values.
-    static void handleData(ModbusMessage response, uint32_t token) {
-        std::unique_ptr<RequestContext> ctx(reinterpret_cast<RequestContext*>(static_cast<uintptr_t>(token)));
-        if (!ctx) return;
-        Client& self = *ctx->owner;
-        // Library response: server ID, function code, byte count, big-endian payload.
+    void handleData(ModbusMessage& response, uint32_t token) {
+        const auto ctx = takeRequest(token);
+        if (!ctx.token) return;
         constexpr std::size_t header = 3;
-        if (response.size() < header || response.getFunctionCode() != READ_HOLD_REGISTER ||
-            response.size() != header + 2u * ctx->count ||
-            response.data()[2] != ctx->count * 2u) {
-            self._statistics.recordError();
-            self._log.addString("Invalid Modbus TCP response length/function");
+        if (response.size() < header || response.getServerID() != _tcp_server_id ||
+            response.getFunctionCode() != READ_HOLD_REGISTER ||
+            response.size() != header + 2u * ctx.count || response.data()[2] != ctx.count * 2u) {
+            _statistics.recordError();
+            _log.addString("Invalid Modbus TCP response length/function/server ID");
             return;
         }
         std::array<uint16_t, 125> words{};
         const uint8_t* p = response.data() + header;
-        for (std::size_t i = 0; i < ctx->count; ++i)
+        for (std::size_t i = 0; i < ctx.count; ++i)
             words[i] = static_cast<uint16_t>((uint16_t(p[2*i]) << 8) | p[2*i+1]);
-        DataAccess<Client> access(self);
-        if (!access.writeHoldingRegisters(ctx->start, ctx->count, words.data())) {
-            self._statistics.recordError();
-            self._log.addString("Received data outside device schema");
+        DataAccess<Client> access(*this);
+        if (!access.writeHoldingRegisters(ctx.start, ctx.count, words.data())) {
+            _statistics.recordError();
+            _log.addString("Received data outside device schema");
             return;
         }
-        self._dataRead = true;
-        self._statistics.recordDataOk();
+        _updated.store(true, std::memory_order_release);
+        _statistics.recordDataOk();
     }
 
+    template<typename> friend class DataAccess;
+    DeviceType _device{};
     Statistics _statistics;
     Log _log;
+    std::atomic<bool> _updated{false};
+    std::array<RequestContext, request_capacity> _requests{};
     uint32_t _transaction = 0;
+    std::mutex _requestMutex;
     ModbusClientTCP& _tcp;
     IPAddress _remote;
     uint16_t _tcp_port;
     uint16_t _tcp_server_id;
-    // Shared by callbacks and application-side DataAccess guards.
     mutable std::timed_mutex _Mutex;
 };
 } // namespace modbus_gateway
