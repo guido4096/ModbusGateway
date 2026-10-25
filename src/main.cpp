@@ -33,7 +33,7 @@
 static bool eth_connected = false;
 WebServer server(80);
 
-WiFiClient theClient;
+WiFiClient meterClient;
 
 // NTP Server
 const char *ntpServer = "pool.ntp.org";
@@ -59,7 +59,7 @@ IPAddress remote()
     a.fromString(REMOTE);
     return a;
 }
-ModbusClientTCP tcp(theClient, 10);
+ModbusClientTCP tcp(meterClient, 10);
 modbus_gateway::Client<modbus_gateway::EM24_E1> meter(tcp, remote(), TCP_PORT, TCP_SERVER_ID);
 
 // TCP Slave
@@ -74,7 +74,11 @@ modbus_gateway::ConvertEM24_E1ToWattNode converter(meter, wattnode);
 #define BOARD_485_RX 32
 #define Serial485 Serial2
 
-// Room for 3 timed events
+// Polling periods in milliseconds. Each register block is scheduled independently.
+static constexpr unsigned long INTERVAL_DYNAMIC = 100;
+static constexpr unsigned long INTERVAL_ENERGY = 2000;
+static constexpr unsigned long INTERVAL_SLOW = 10000;
+
 unsigned long prevTime1;
 unsigned long prevTime2;
 unsigned long prevTime3;
@@ -88,6 +92,7 @@ void handleRoot()
     <a href=\"description\">Description of WattNode and Meter device</a><br/>\
     <a href=\"logmeter\">Log Meter messsages</a><br/>\
     <a href=\"logwattnode\">Log Wattnode messsages</a><br/>\
+    <a href=\"statistics\">Statistics</a><br/>\
     ";
     server.send(200, "text/html", r.c_str());
 }
@@ -114,11 +119,27 @@ void handleWattnode()
     server.send(200, "text/plain", r.c_str());
 }
 
+void handleStatistics()
+{
+    String r;
+    {
+        modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::WattNode>> wn(wattnode);
+        r += "WattNode (RTU server)\r\n";
+        r += wn.getStatistics();
+    }
+    {
+        modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24_E1>> m(meter);
+        r += "\r\nMeter (TCP client)\r\n";
+        r += m.getStatistics();
+    }
+    server.send(200, "text/plain", r.c_str());
+}
+
 void handleDescription()
 {
     String r;
-    r += wattnode._device._dd.GetDescriptions();
-    r += meter._device._dd.GetDescriptions();
+    r += modbus_gateway::getDeviceDescription<modbus_gateway::WattNode>();
+    r += modbus_gateway::getDeviceDescription<modbus_gateway::EM24_E1>();
     server.send(200, "text/plain", r.c_str());
 }
 
@@ -233,14 +254,14 @@ void setup()
     server.on("/wattnode", handleWattnode);
     server.on("/logmeter", handleLogMeter);
     server.on("/logwattnode", handleLogWattnode);
+    server.on("/statistics", handleStatistics);
     server.onNotFound(handleNotFound);
 
     server.begin();
     Serial.println("HTTP server started");
 
-    tcp.setTimeout(2000, 200);
-    tcp.begin();
-    tcp.setTarget(IPAddress(remote()), 502);
+    // The gateway client owns its TCP connection setup.
+    meter.connect();
 
     // Setup timers to allow tracking elapsed time
     prevTime1 = millis() - 10000; // trigger timers immediately at startup
@@ -253,8 +274,8 @@ void setup()
     rtu.begin(Serial485);
 
     // Print the setup of the modbus devices
-    Serial.print(wattnode._device._dd.GetDescriptions());
-    Serial.print(meter._device._dd.GetDescriptions());
+    Serial.print(modbus_gateway::getDeviceDescription<modbus_gateway::WattNode>());
+    Serial.print(modbus_gateway::getDeviceDescription<modbus_gateway::EM24_E1>());
 
     // OTA
     ArduinoOTA.setHostname(DEVICENAME);
@@ -299,19 +320,19 @@ void loop()
     // use elapsed time to know when to add a new job
     unsigned long currTime = millis();
     bool jobScheduled = false;
-    if (currTime - prevTime1 >= 300) // Instantaneous variables, update regularly
+    if (currTime - prevTime1 >= INTERVAL_DYNAMIC) // Instantaneous variables, update regularly
     {
         meter.readBlockFromMeter("dynamic");
         prevTime1 = currTime;
         jobScheduled = true;
     }
-    if (currTime - prevTime2 >= 2000) // Updated every two seconds
+    if (currTime - prevTime2 >= INTERVAL_ENERGY) // Updated every two seconds
     {
         meter.readBlockFromMeter("energy");
         prevTime2 = currTime;
         jobScheduled = true;
     }
-    if (currTime - prevTime3 >= 10000) // This hardly ever changes
+    if (currTime - prevTime3 >= INTERVAL_SLOW) // This hardly ever changes
     {
 
         meter.readBlockFromMeter("time");
@@ -328,5 +349,5 @@ void loop()
         meter._dataRead = false;
     }
     if (jobScheduled)
-        delay(100);
+        taskYIELD();
 }

@@ -6,3 +6,4 @@
 .vscode/extensions.json
 .vscode/settings.json
 secrets.ini
+.DS_Store

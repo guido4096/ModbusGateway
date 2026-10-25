@@ -1,5 +1,5 @@
 /**
- * @file      convert_em24_to_wattnode.h
+ * @file      convert_em24_e1_to_wattnode.h
  * @author    Guido Jansen (guido@ngjansen.be)
  * @license   MIT
  * @copyright Copyright (c) 2025 Guido Jansen
@@ -15,18 +15,18 @@
 #include "client.h"
 namespace modbus_gateway
 {
-    class ConvertEM24_E1ToWattNode {
+    class ConvertEM24_E1ToWattNode
+    {
     public:
-
-        ConvertEM24_E1ToWattNode(modbus_gateway::Client<EM24_E1>& meter, modbus_gateway::Server<WattNode>& wattnode)
-        : _meter(meter)
-        , _wattnode(wattnode)
-        {}
+        ConvertEM24_E1ToWattNode(modbus_gateway::Client<EM24_E1> &meter, modbus_gateway::Server<WattNode> &wattnode)
+            : _meter(meter), _wattnode(wattnode)
+        {
+        }
 
         void CopyDataFromMasterToSlave();
 
-    private:       
-        modbus_gateway::Client<EM24_E1>&    _meter;
-        modbus_gateway::Server<WattNode>& _wattnode;
+    private:
+        modbus_gateway::Client<EM24_E1> &_meter;
+        modbus_gateway::Server<WattNode> &_wattnode;
     };
 }
