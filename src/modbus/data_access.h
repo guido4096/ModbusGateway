@@ -11,10 +11,10 @@
 
 namespace modbus_gateway {
 // Optional lock-scoped access. The owner must expose _Mutex and _device.
-/** Scope-bound exclusive access to an owner's device and diagnostics.
+/** Scope-bound exclusive access to an owner's register values.
  * The guard acquires the owner mutex for its entire lifetime; callers must
  * not retain the object across network operations or other blocking work.
- * The owner provides _device, _Mutex, _log and _statistics as friends.
+ * The owner grants access to _device and _Mutex through friendship.
  */
 template<typename Owner>
 class DataAccess {
@@ -33,9 +33,6 @@ public:
         owner_._device.template set<R>(v);
     }
     String allValuesAsString() const { return owner_._device.allValuesAsString(); }
-    String getStatistics() { return owner_._statistics.allValuesAsString(); }
-    String getLog() { return owner_._log.allValuesAsString(); }
-    void logMessage(const String& message) { owner_._log.addString(message); }
     bool readHoldingRegisters(uint16_t addr, uint16_t count, uint16_t* dst) const {
         return owner_._device.readHoldingRegisters(addr,count,dst);
     }

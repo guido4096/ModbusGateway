@@ -73,6 +73,12 @@ public:
         return submit(static_cast<uint16_t>(index), b.address, b.words);
     }
 
+
+    // Diagnostics own their synchronization and do not acquire the register lock.
+    String getStatistics() { return _statistics.allValuesAsString(); }
+    String getLog() { return _log.allValuesAsString(); }
+    void logMessage(const String& message) { _log.addString(message); }
+
 private:
     // Tokens are sequence numbers, never pointers. Slots are released on every
     // terminal callback and synchronous enqueue failure. Saturation rejects a

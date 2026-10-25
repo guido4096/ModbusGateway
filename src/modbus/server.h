@@ -70,6 +70,12 @@ public:
     }
     bool registered() const { return _registered; }
 
+
+    // Diagnostics own their synchronization and do not acquire the register lock.
+    String getStatistics() { return _statistics.allValuesAsString(); }
+    String getLog() { return _log.allValuesAsString(); }
+    void logMessage(const String& message) { _log.addString(message); }
+
 private:
     // Request coordinates are Modbus *word* addresses. Parse and validate
     // the full PDU before acquiring the device lock or changing any values.

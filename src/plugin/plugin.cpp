@@ -88,33 +88,32 @@ Server<Optimizer> optimizer(tcp_server, 3);
 
 void handleMeter()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24_E1>> m(meter);
-    String r = m.allValuesAsString();
-    webServer->send(200, "text/plain", r.c_str());
+    String response;
+    {
+        DataAccess<Client<EM24_E1>> access(meter);
+        response = access.allValuesAsString();
+    }
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleWattnode()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::WattNode>> wn(wattnode);
-    String r = wn.allValuesAsString();
-    webServer->send(200, "text/plain", r.c_str());
+    String response;
+    {
+        DataAccess<Server<WattNode>> access(wattnode);
+        response = access.allValuesAsString();
+    }
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleStatistics()
 {
-    String r;
-    {
-        modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::WattNode>> wn(wattnode);
-        r += "WattNode (RTU server)\r\n";
-        r += wn.getStatistics();
-    }
-    {
-        modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24_E1>> m(meter);
-        r += "\r\nMeter (TCP client)\r\n";
-        r += m.getStatistics();
-    }
-    appendExtraStatistics(r);
-    webServer->send(200, "text/plain", r.c_str());
+    String response = "WattNode (RTU server)\r\n";
+    response += wattnode.getStatistics();
+    response += "\r\nMeter (TCP client)\r\n";
+    response += meter.getStatistics();
+    appendExtraStatistics(response);
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleDescription()
@@ -128,131 +127,118 @@ void handleDescription()
 
 void handleLogMeter()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24_E1>> m(meter);
-
-    String r = m.getLog();
-    webServer->send(200, "text/plain", r.c_str());
+    const String response = meter.getLog();
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleLogWattnode()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::WattNode>> wn(wattnode);
-
-    String r = wn.getLog();
-    webServer->send(200, "text/plain", r.c_str());
+    const String response = wattnode.getLog();
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleAlfen()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::Alfen>> a(alfen);
-    String r = a.allValuesAsString();
-    webServer->send(200, "text/plain", r.c_str());
+    String response;
+    {
+        DataAccess<Client<Alfen>> access(alfen);
+        response = access.allValuesAsString();
+    }
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleSolarEdge()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::SolarEdge>> s(solaredge);
-    String r = s.allValuesAsString();
-    webServer->send(200, "text/plain", r.c_str());
+    String response;
+    {
+        DataAccess<Client<SolarEdge>> access(solaredge);
+        response = access.allValuesAsString();
+    }
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleOptimizer()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
-    String r = o.allValuesAsString();
-    webServer->send(200, "text/plain", r.c_str());
+    String response;
+    {
+        DataAccess<Server<Optimizer>> access(optimizer);
+        response = access.allValuesAsString();
+    }
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleOptimizer0()
 {
-    modbus_gateway::DataAccess<
-        modbus_gateway::Server<modbus_gateway::Optimizer>
-    > o(optimizer);
-
-    o.set<modbus_gateway::Optimizer::optimizer_strategy>(0);
-
+    String response;
+    {
+        DataAccess<Server<Optimizer>> access(optimizer);
+        access.set<Optimizer::optimizer_strategy>(0);
+        response = "OK\n" + access.allValuesAsString();
+    }
     preferences.putInt("opt_strat", 0);
-
-    String r = "OK\n" + o.allValuesAsString();
-    webServer->send(200, "text/plain", r.c_str());
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleOptimizer1()
 {
-    modbus_gateway::DataAccess<
-        modbus_gateway::Server<modbus_gateway::Optimizer>
-    > o(optimizer);
-
-    o.set<modbus_gateway::Optimizer::optimizer_strategy>(1);
-
+    String response;
+    {
+        DataAccess<Server<Optimizer>> access(optimizer);
+        access.set<Optimizer::optimizer_strategy>(1);
+        response = "OK\n" + access.allValuesAsString();
+    }
     preferences.putInt("opt_strat", 1);
-
-    String r = "OK\n" + o.allValuesAsString();
-    webServer->send(200, "text/plain", r.c_str());
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleOptimizer2()
 {
-    modbus_gateway::DataAccess<
-        modbus_gateway::Server<modbus_gateway::Optimizer>
-    > o(optimizer);
-
-    o.set<modbus_gateway::Optimizer::optimizer_strategy>(2);
-
+    String response;
+    {
+        DataAccess<Server<Optimizer>> access(optimizer);
+        access.set<Optimizer::optimizer_strategy>(2);
+        response = "OK\n" + access.allValuesAsString();
+    }
     preferences.putInt("opt_strat", 2);
-
-    String r = "OK\n" + o.allValuesAsString();
-    webServer->send(200, "text/plain", r.c_str());
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleStatus()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
-    uint32_t optimizer_status = o.get<modbus_gateway::Optimizer::optimizer_strategy>();
-    String r = "{\"circuit\": " + String(optimizer_status) + " }";
-    webServer->send(200, "application/json", r.c_str());
+    int32_t strategy;
+    {
+        DataAccess<Server<Optimizer>> access(optimizer);
+        strategy = access.get<Optimizer::optimizer_strategy>();
+    }
+    String response = "{\"circuit\": " + String(static_cast<uint32_t>(strategy)) + " }";
+    webServer->send(200, "application/json", response.c_str());
 }
 
 void handleLogAlfen()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::Alfen>> a(alfen);
-    String r = a.getLog();
-
-    webServer->send(200, "text/plain", r.c_str());
+    const String response = alfen.getLog();
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleLogSolarEdge()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::SolarEdge>> s(solaredge);
-    String r = s.getLog();
-
-    webServer->send(200, "text/plain", r.c_str());
+    const String response = solaredge.getLog();
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleLogOptimizer()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::Optimizer>> o(optimizer);
-
-    String r = o.getLog();
-    webServer->send(200, "text/plain", r.c_str());
+    const String response = optimizer.getLog();
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void appendExtraStatistics(String& output) {
-    {
-        DataAccess<Server<Optimizer>> o(optimizer);
-        output += "\r\nOptimizer (TCP server)\r\n";
-        output += o.getStatistics();
-    }
-    {
-        DataAccess<Client<Alfen>> a(alfen);
-        output += "\r\nAlfen (TCP client)\r\n";
-        output += a.getStatistics();
-    }
-    {
-        DataAccess<Client<SolarEdge>> s(solaredge);
-        output += "\r\nSolarEdge (TCP client)\r\n";
-        output += s.getStatistics();
-    }
+    output += "\r\nOptimizer (TCP server)\r\n";
+    output += optimizer.getStatistics();
+    output += "\r\nAlfen (TCP client)\r\n";
+    output += alfen.getStatistics();
+    output += "\r\nSolarEdge (TCP client)\r\n";
+    output += solaredge.getStatistics();
 }
 
 void appendExtraDescriptions(String& output) {
@@ -274,8 +260,7 @@ Inputs readInputs() {
 }
 
 void logAdjustment(const char* message) {
-    DataAccess<Server<Optimizer>> o(optimizer);
-    o.logMessage(message);
+    optimizer.logMessage(message);
 }
 } // namespace battery_optimizer
 
@@ -305,10 +290,10 @@ void setup(WebServer& server) {
     {
         DataAccess<Server<Optimizer>> o(optimizer);
         o.set<Optimizer::optimizer_strategy>(strategy);
-        char buffer[200];
-        snprintf(buffer, sizeof(buffer), "Starting Strategy: %i", static_cast<int>(strategy));
-        o.logMessage(buffer);
     }
+    char buffer[200];
+    snprintf(buffer, sizeof(buffer), "Starting Strategy: %i", static_cast<int>(strategy));
+    optimizer.logMessage(buffer);
     tcp_server.start(504, 4, 100);
     previousPoll = millis() - 10000;
     meter.connect();

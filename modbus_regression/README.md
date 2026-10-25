@@ -32,3 +32,8 @@ frames, invalid replies, callback cleanup, endpoint isolation, bounded request
 capacity, negative schemas, all-or-nothing register ranges and concurrent
 diagnostics. Infrastructure binaries run with address/undefined-behavior
 sanitizers; an additional compile-fail check enforces schema rejection in Device.
+
+Plugin lifecycle tests invoke every registered route. Simulated HTTP sends and
+preference writes assert that no register guard is held. Production-wrapper
+tests also call direct diagnostics while a register guard is held to verify
+that diagnostics do not reacquire the non-recursive register mutex.
