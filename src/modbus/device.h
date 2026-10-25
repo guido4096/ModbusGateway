@@ -13,12 +13,8 @@
 #include "modbus/device_diagnostics.h"
 
 namespace modbus_gateway {
-/** Mutable state belonging to one device instance.
- * All current register words are held in one fixed-size array. Descriptors
- * remain in Schema::metadata (immutable), and the constructor copies the
- * declared raw defaults into the appropriate word positions. Runtime-only
- * values such as a device serial number may then be installed by a factory.
- */
+// One instance owns mutable raw words; its schema owns immutable descriptions.
+// Access to this storage is synchronized by the enclosing Client/Server owner.
 template<typename Schema>
 class Device {
 public:
@@ -28,82 +24,88 @@ public:
     static constexpr std::size_t word_count = decltype(Schema::metadata)::word_count;
 
     Device() {
-        for (std::size_t i=0; i<metadata.registers.size(); ++i) {
-            const auto& d = metadata.registers[i];
-            storeBits(words_.data()+d.storage_offset, d.words,
-                      d.high_word_first, d.default_bits);
+        for (const auto& registerDescription : metadata.registers) {
+            storeBits(words_.data() + registerDescription.storage_offset,
+                      registerDescription.words, registerDescription.high_word_first,
+                      registerDescription.default_bits);
         }
     }
 
-    // The protocol server ID is instance state, independent of register layout.
+    // Protocol identity is instance state, independent of the register layout.
     void setServerId(uint8_t id) { server_id_ = id; }
     uint8_t serverId() const { return server_id_; }
 
-    template<RegisterType R>
-    using value_type = typename Native<metadata.registers[static_cast<std::size_t>(R)].type>::type;
-
-    template<RegisterType R>
+    template<RegisterType Register>
     static constexpr const RegisterDescription& description() {
-        return Schema::template description<R>();
+        return Schema::template description<Register>();
     }
 
-    // Every descriptor property used by the typed access path is known at
-    // instantiation time. No runtime metadata lookup or codec dispatch occurs.
-    template<RegisterType R>
-    value_type<R> get() const {
-        constexpr auto d = description<R>();
-        return decodeTyped<d.type, d.high_word_first>(
-            words_.data() + d.storage_offset);
+    template<RegisterType Register>
+    using value_type = typename Native<
+        metadata.registers[static_cast<std::size_t>(Register)].type>::type;
+
+    // Type, word order and storage offset are constants for each register ID.
+    // These calls return raw native values; engineering scaling is separate.
+    template<RegisterType Register>
+    value_type<Register> get() const {
+        constexpr auto registerDescription = description<Register>();
+        return decodeTyped<registerDescription.type, registerDescription.high_word_first>(
+            words_.data() + registerDescription.storage_offset);
     }
 
-    template<RegisterType R>
-    void set(value_type<R> v) {
-        constexpr auto d = description<R>();
-        encodeTyped<d.type, d.high_word_first>(
-            words_.data() + d.storage_offset, v);
+    template<RegisterType Register>
+    void set(value_type<Register> value) {
+        constexpr auto registerDescription = description<Register>();
+        encodeTyped<registerDescription.type, registerDescription.high_word_first>(
+            words_.data() + registerDescription.storage_offset, value);
     }
 
-    // Dynamic ID lookup is also constant time: enum value -> descriptor index.
-    // Only wire-address lookup requires walking the block ranges.
+    // Runtime IDs still index directly; only wire addresses need a block search.
     static const RegisterDescription* describe(RegisterType id) {
-        auto i = static_cast<std::size_t>(id);
-        return i < metadata.registers.size() ? &metadata.registers[i] : nullptr;
+        const auto registerIndex = static_cast<std::size_t>(id);
+        return registerIndex < metadata.registers.size() ? &metadata.registers[registerIndex] : nullptr;
     }
 
-    // Address-based protocol requests traverse blocks (B is typically small).
-    // A request crossing a hole fails, rather than fabricating zeros.
-    // Validate the *entire* requested range before copying any words. A
-    // request may begin midway through a 32-bit field, as Modbus addresses
-    // words rather than logical C++ values. Holes between blocks are invalid.
+    // Modbus addresses words, so a range may include part of a 32-bit value.
+    // Check the entire range before copying: a gap cannot cause a partial result.
     bool readHoldingRegisters(uint16_t address, uint16_t count, uint16_t* output) const {
-        if (!output || count == 0 || uint32_t(address)+count > 65536) return false;
-        const auto start = contiguousRange(address, count);
+        if (!output || !validAddressRange(address, count)) {
+            return false;
+        }
+        const auto start = contiguousRangeStart(address, count);
         if (start != invalid_position) {
             std::copy_n(words_.data() + start, count, output);
             return true;
         }
-        for (uint32_t n=0; n<count; ++n)
-            if (findWord(uint32_t(address)+n) == invalid_position) return false;
-        for (uint32_t n=0; n<count; ++n)
-            output[n] = words_[findWord(uint32_t(address)+n)];
+        if (!allWordsDefined(address, count)) {
+            return false;
+        }
+        for (uint32_t wordIndex = 0; wordIndex < count; ++wordIndex) {
+            output[wordIndex] = words_[storagePosition(uint32_t(address) + wordIndex)];
+        }
         return true;
     }
-    // Writes are likewise all-or-nothing with respect to address validity.
-    // This raw protocol path does not apply scaling or field-level permissions.
+
+    // Raw protocol writes apply no scaling or field permissions. Address
+    // validation remains all-or-nothing, including ranges crossing block gaps.
     bool writeHoldingRegisters(uint16_t address, uint16_t count, const uint16_t* input) {
-        if (!input || count == 0 || uint32_t(address)+count > 65536) return false;
-        const auto start = contiguousRange(address, count);
+        if (!input || !validAddressRange(address, count)) {
+            return false;
+        }
+        const auto start = contiguousRangeStart(address, count);
         if (start != invalid_position) {
             std::copy_n(input, count, words_.data() + start);
             return true;
         }
-        for (uint32_t n=0; n<count; ++n)
-            if (findWord(uint32_t(address)+n) == invalid_position) return false;
-        for (uint32_t n=0; n<count; ++n)
-            words_[findWord(uint32_t(address)+n)] = input[n];
+        if (!allWordsDefined(address, count)) {
+            return false;
+        }
+        for (uint32_t wordIndex = 0; wordIndex < count; ++wordIndex) {
+            words_[storagePosition(uint32_t(address) + wordIndex)] = input[wordIndex];
+        }
         return true;
     }
-    // Format the current register values using the schema descriptions and scaling.
+
     String allValuesAsString() const {
         return formatDeviceValues(metadata, words_.data());
     }
@@ -113,23 +115,42 @@ public:
 
 private:
     static constexpr std::size_t invalid_position = static_cast<std::size_t>(-1);
-    static std::size_t contiguousRange(uint16_t address, uint16_t count) {
-        for (const auto& block : metadata.blocks)
+
+    static bool validAddressRange(uint16_t address, uint16_t count) {
+        return count != 0 && uint32_t(address) + count <= 65536;
+    }
+
+    // A single block maps directly to contiguous storage. The general path
+    // below also handles adjacent wire blocks declared in a different order.
+    static std::size_t contiguousRangeStart(uint16_t address, uint16_t count) {
+        for (const auto& block : metadata.blocks) {
             if (address >= block.address &&
-                uint32_t(address) + count <= uint32_t(block.address) + block.words)
+                uint32_t(address) + count <= uint32_t(block.address) + block.words) {
                 return block.storage_offset + address - block.address;
+            }
+        }
         return invalid_position;
     }
-    // Convert a wire address to a flat storage offset. Each disjoint block
-    // has its own wire base; its words are packed contiguously in words_.
-    static std::size_t findWord(uint32_t address) {
-        for (const auto& b : metadata.blocks)
-            if (address >= b.address && address < uint32_t(b.address)+b.words)
-                return b.storage_offset + address - b.address;
+
+    static bool allWordsDefined(uint16_t address, uint16_t count) {
+        for (uint32_t wordIndex = 0; wordIndex < count; ++wordIndex) {
+            if (storagePosition(uint32_t(address) + wordIndex) == invalid_position) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static std::size_t storagePosition(uint32_t address) {
+        for (const auto& block : metadata.blocks) {
+            if (address >= block.address && address < uint32_t(block.address) + block.words) {
+                return block.storage_offset + address - block.address;
+            }
+        }
         return invalid_position;
     }
+
     std::array<uint16_t, word_count> words_{};
     uint8_t server_id_ = 0;
 };
-
 } // namespace modbus_gateway

@@ -14,23 +14,33 @@ namespace modbus_gateway {
 // Modbus carries 16-bit words. Explicitly assemble/disassemble the 32-bit
 // bit pattern so host endianness cannot silently change the wire word order.
 // memcpy preserves float bit patterns without inactive-union-member access.
-inline uint32_t toBits(float x) {
-    static_assert(sizeof(float)==4, "IEEE754 float32 required");
-    uint32_t bits; std::memcpy(&bits, &x, 4); return bits;
+inline uint32_t toBits(float value) {
+    static_assert(sizeof(float) == 4, "IEEE754 float32 required");
+    uint32_t bits;
+    std::memcpy(&bits, &value, 4);
+    return bits;
 }
 inline float fromBits(uint32_t bits) {
-    float value; std::memcpy(&value, &bits, 4); return value;
+    float value;
+    std::memcpy(&value, &bits, 4);
+    return value;
 }
 inline uint32_t loadBits(const uint16_t* words, uint8_t count, bool highFirst) {
-    if (count == 1) return words[0];
+    if (count == 1) {
+        return words[0];
+    }
     return highFirst ? (uint32_t(words[0]) << 16) | words[1]
                      : (uint32_t(words[1]) << 16) | words[0];
 }
 inline void storeBits(uint16_t* words, uint8_t count, bool highFirst, uint32_t bits) {
-    if (count == 1) { words[0] = uint16_t(bits); return; }
-    uint16_t hi = uint16_t(bits >> 16), lo = uint16_t(bits);
-    words[0] = highFirst ? hi : lo;
-    words[1] = highFirst ? lo : hi;
+    if (count == 1) {
+        words[0] = uint16_t(bits);
+        return;
+    }
+    const uint16_t highWord = uint16_t(bits >> 16);
+    const uint16_t lowWord = uint16_t(bits);
+    words[0] = highFirst ? highWord : lowWord;
+    words[1] = highFirst ? lowWord : highWord;
 }
 
 /**
@@ -44,7 +54,7 @@ inline void storeBits(uint16_t* words, uint8_t count, bool highFirst, uint32_t b
  */
 template<DataType Type, bool HighFirst>
 inline typename Native<Type>::type decodeTyped(const uint16_t* words) {
-    using T = typename Native<Type>::type;
+    using ValueType = typename Native<Type>::type;
     if constexpr (Type == DataType::int16) {
         // Converting an unsigned word outside the signed range is implementation-defined;
         // the ESP32 toolchain uses the expected two's-complement interpretation.
@@ -53,8 +63,11 @@ inline typename Native<Type>::type decodeTyped(const uint16_t* words) {
         return words[0];
     } else {
         const uint32_t bits = loadBits(words, 2, HighFirst);
-        if constexpr (Type == DataType::float32) return fromBits(bits);
-        else return static_cast<T>(bits);
+        if constexpr (Type == DataType::float32) {
+            return fromBits(bits);
+        } else {
+            return static_cast<ValueType>(bits);
+        }
     }
 }
 
@@ -74,27 +87,47 @@ inline void encodeTyped(uint16_t* words, typename Native<Type>::type value) {
 // float bits, so it is not an inverse of scaled decode<float>(). Typed Device
 // get/set always use raw native values through decodeTyped/encodeTyped.
 template<typename T>
-T decode(const uint16_t* data, const RegisterDescription& r) {
-    uint32_t bits = loadBits(data, r.words, r.high_word_first);
-    if constexpr (std::is_same_v<T,float>) {
-        float raw = r.type == DataType::float32 ? fromBits(bits) :
-                    r.type == DataType::int16 ? float(int16_t(uint16_t(bits))) :
-                    r.type == DataType::uint16 ? float(uint16_t(bits)) :
-                    r.type == DataType::int32 ? float(int32_t(bits)) : float(bits);
-        return raw / getScaling(r.scaling);
+T decode(const uint16_t* data, const RegisterDescription& description) {
+    uint32_t bits = loadBits(data, description.words, description.high_word_first);
+    if constexpr (std::is_same_v<T, float>) {
+        float raw;
+        switch (description.type) {
+        case DataType::float32:
+            raw = fromBits(bits);
+            break;
+        case DataType::int16:
+            raw = float(int16_t(uint16_t(bits)));
+            break;
+        case DataType::uint16:
+            raw = float(uint16_t(bits));
+            break;
+        case DataType::int32:
+            raw = float(int32_t(bits));
+            break;
+        default:
+            raw = float(bits);
+            break;
+        }
+        return raw / getScaling(description.scaling);
     } else {
         // Exact integral access only; typed callers select the declared type.
-        if constexpr (std::is_same_v<T,int16_t>) return int16_t(uint16_t(bits));
-        else return static_cast<T>(bits);
+        if constexpr (std::is_same_v<T, int16_t>) {
+            return int16_t(uint16_t(bits));
+        } else {
+            return static_cast<T>(bits);
+        }
     }
 }
 
 template<typename T>
-void encode(uint16_t* data, const RegisterDescription& r, T value) {
+void encode(uint16_t* data, const RegisterDescription& description, T value) {
     uint32_t bits = 0;
-    if constexpr (std::is_same_v<T,float>) bits = toBits(value);
-    else bits = static_cast<uint32_t>(value);
-    storeBits(data, r.words, r.high_word_first, bits);
+    if constexpr (std::is_same_v<T, float>) {
+        bits = toBits(value);
+    } else {
+        bits = static_cast<uint32_t>(value);
+    }
+    storeBits(data, description.words, description.high_word_first, bits);
 }
 
 } // namespace modbus_gateway

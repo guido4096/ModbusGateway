@@ -4,7 +4,7 @@
  * @license   MIT
  * @copyright Copyright (c) 2025 Guido Jansen
  * @date      04-Mar-2025
- * @note      Object that acts as a master to retrieve values from the meter
+ * @note      Asynchronous Modbus TCP device reader
  */
 #pragma once
 #include <array>
@@ -18,124 +18,132 @@
 namespace modbus_gateway {
 // The caller owns the transport and must keep it and this client alive until
 // accepted requests have completed. One client owns the callback pair per transport.
-template<class MODBUS_TYPE>
+template<typename DeviceSchema>
 class Client {
 public:
-    using Schema = MODBUS_TYPE;
+    using Schema = DeviceSchema;
     using RegisterType = typename Schema::RegisterId;
     using DeviceType = Device<Schema>;
     static constexpr std::size_t request_capacity = 32;
 
-    Client(ModbusClientTCP& tcp, const IPAddress& remote, uint16_t tcp_port, uint16_t tcp_server_id)
-        : _tcp(tcp), _remote(remote), _tcp_port(tcp_port), _tcp_server_id(tcp_server_id) {
-        _tcp.onDataHandler([this](ModbusMessage response, uint32_t token) { handleData(response, token); });
-        _tcp.onErrorHandler([this](Error error, uint32_t token) { handleError(error, token); });
+    Client(ModbusClientTCP& transport, const IPAddress& remoteAddress, uint16_t tcpPort, uint16_t serverId)
+        : _transport(transport), _remoteAddress(remoteAddress), _tcpPort(tcpPort), _serverId(serverId) {
+        _transport.onDataHandler([this](ModbusMessage response, uint32_t token) {
+            handleData(response, token);
+        });
+        _transport.onErrorHandler([this](Error error, uint32_t token) {
+            handleError(error, token);
+        });
     }
+
     ~Client() {
         // Stop/drain the transport before destruction; then detach its callbacks.
-        _tcp.onDataHandler(nullptr);
-        _tcp.onErrorHandler(nullptr);
+        _transport.onDataHandler(nullptr);
+        _transport.onErrorHandler(nullptr);
     }
+
     void connect() {
-        _tcp.setTimeout(2000, 10);
-        _tcp.begin();
-        _tcp.setTarget(_remote, _tcp_port);
+        _transport.setTimeout(2000, 10);
+        _transport.begin();
+        _transport.setTarget(_remoteAddress, _tcpPort);
     }
 
     // Consume before processing. A callback arriving during processing leaves
     // another notification pending instead of having its flag cleared afterward.
-    bool consumeUpdated() { return _updated.exchange(false, std::memory_order_acq_rel); }
+    bool consumeUpdated() {
+        return _updated.exchange(false, std::memory_order_acq_rel);
+    }
 
     bool readFromMeter(RegisterType first, RegisterType last) {
-        const auto* a = DeviceType::describe(first);
-        const auto* b = DeviceType::describe(last);
-        return a && b && readFromMeter(*a, *b);
+        const auto* firstDescription = DeviceType::describe(first);
+        const auto* lastDescription = DeviceType::describe(last);
+        return firstDescription && lastDescription && readFromMeter(*firstDescription, *lastDescription);
     }
-    template<RegisterType First, RegisterType Last>
-    bool readFromMeter() { return readFromMeter(First, Last); }
 
-    bool readFromMeter(const RegisterDescription& first, const RegisterDescription& last) {
-        if (first.block != last.block || first.address > last.address) return false;
-        const uint32_t count = uint32_t(last.address) + last.words - first.address;
-        if (!count || count > 125) return false;
-        return submit(first.block, first.address, static_cast<uint16_t>(count));
+    template<RegisterType First, RegisterType Last>
+    bool readFromMeter() {
+        return readFromMeter(First, Last);
     }
+
+    // The last logical register may span two words; include its complete width.
+    bool readFromMeter(const RegisterDescription& first, const RegisterDescription& last) {
+        if (first.block != last.block || first.address > last.address) {
+            return false;
+        }
+        const uint32_t wordCount = uint32_t(last.address) + last.words - first.address;
+        if (wordCount == 0 || wordCount > max_read_words) {
+            return false;
+        }
+        return submit(first.block, first.address, static_cast<uint16_t>(wordCount));
+    }
+
     bool readBlockFromMeter(const String& name) {
         const auto& blocks = DeviceType::blocks();
-        for (std::size_t i = 0; i < blocks.size(); ++i)
-            if (name == blocks[i].name) return readBlockFromMeter(i);
+        for (std::size_t blockIndex = 0; blockIndex < blocks.size(); ++blockIndex) {
+            if (name == blocks[blockIndex].name) {
+                return readBlockFromMeter(blockIndex);
+            }
+        }
         return false;
     }
-    bool readBlockFromMeter(std::size_t index) {
+
+    bool readBlockFromMeter(std::size_t blockIndex) {
         const auto& blocks = DeviceType::blocks();
-        if (index >= blocks.size()) return false;
-        const auto& b = blocks[index];
-        return submit(static_cast<uint16_t>(index), b.address, b.words);
+        if (blockIndex >= blocks.size()) {
+            return false;
+        }
+        const auto& block = blocks[blockIndex];
+        return submit(static_cast<uint16_t>(blockIndex), block.address, block.words);
     }
 
-
-    // Diagnostics own their synchronization and do not acquire the register lock.
+    // Diagnostics synchronize themselves without taking the register lock.
     String getStatistics() { return _statistics.allValuesAsString(); }
     String getLog() { return _log.allValuesAsString(); }
     void logMessage(const String& message) { _log.addString(message); }
 
 private:
-    // Tokens are sequence numbers, never pointers. Slots are released on every
-    // terminal callback and synchronous enqueue failure. Saturation rejects a
-    // request without allocating; capacity is independent of the transport queue.
+    static constexpr uint16_t max_read_words = 125;
+    static constexpr std::size_t response_header_bytes = 3;
+
+    // Tokens are sequence numbers, never pointers. A slot is released by its
+    // terminal callback or by an enqueue failure. Saturation never allocates.
     struct RequestContext {
         uint32_t token = 0;
-        uint16_t block_index = 0;
-        uint16_t start = 0;
-        uint16_t count = 0;
+        uint16_t blockIndex = 0;
+        uint16_t address = 0;
+        uint16_t wordCount = 0;
     };
-    uint32_t reserveRequest(uint16_t block, uint16_t address, uint16_t count) {
-        std::lock_guard<std::mutex> lock(_requestMutex);
-        for (auto& slot : _requests) {
-            if (slot.token) continue;
-            bool collision;
-            do {
-                ++_transaction;
-                collision = _transaction == 0;
-                for (const auto& used : _requests)
-                    if (used.token == _transaction) collision = true;
-            } while (collision);
-            slot = {_transaction, block, address, count};
-            return slot.token;
-        }
-        return 0;
-    }
-    RequestContext takeRequest(uint32_t token) {
-        std::lock_guard<std::mutex> lock(_requestMutex);
-        for (auto& slot : _requests) {
-            if (!token || slot.token != token) continue;
-            const auto result = slot;
-            slot = {};
-            return result;
-        }
-        return {};
-    }
-    bool submit(uint16_t block, uint16_t address, uint16_t count) {
+
+    static bool validRequestRange(uint16_t blockIndex, uint16_t address, uint16_t wordCount) {
         const auto& blocks = DeviceType::blocks();
-        if (!count || count > 125 || block >= blocks.size()) return false;
-        const auto& b = blocks[block];
-        if (address < b.address || uint32_t(address) + count > uint32_t(b.address) + b.words)
+        if (wordCount == 0 || wordCount > max_read_words || blockIndex >= blocks.size()) {
             return false;
+        }
+        const auto& block = blocks[blockIndex];
+        return address >= block.address &&
+               uint32_t(address) + wordCount <= uint32_t(block.address) + block.words;
+    }
+
+    bool submit(uint16_t blockIndex, uint16_t address, uint16_t wordCount) {
+        if (!validRequestRange(blockIndex, address, wordCount)) {
+            return false;
+        }
         _statistics.recordCall();
-        const auto token = reserveRequest(block, address, count);
-        if (!token) {
+
+        const auto token = reserveRequest(blockIndex, address, wordCount);
+        if (token == 0) {
             _statistics.recordFailure();
             _log.addString("Pending Modbus request capacity reached");
             return false;
         }
-        const Error err = _tcp.addRequest(token, _tcp_server_id, READ_HOLD_REGISTER, address, count);
-        if (err != SUCCESS) {
+        const Error error = _transport.addRequest(token, _serverId, READ_HOLD_REGISTER, address, wordCount);
+        if (error != SUCCESS) {
             takeRequest(token);
             _statistics.recordFailure();
-            ModbusError e(err);
+            ModbusError modbusError(error);
             char buffer[180];
             snprintf(buffer, sizeof(buffer), "Error creating request: %02X - %s, addr=%u, count=%u",
-                     (unsigned)(int)e, (const char*)e, address, count);
+                     (unsigned)(int)modbusError, (const char*)modbusError, address, wordCount);
             Serial.println(buffer);
             _log.addString(buffer);
             return false;
@@ -143,35 +151,82 @@ private:
         _statistics.recordSuccess();
         return true;
     }
+
+    uint32_t reserveRequest(uint16_t blockIndex, uint16_t address, uint16_t wordCount) {
+        std::lock_guard<std::mutex> lock(_requestMutex);
+        for (auto& slot : _pendingRequests) {
+            if (slot.token == 0) {
+                slot = {nextRequestToken(), blockIndex, address, wordCount};
+                return slot.token;
+            }
+        }
+        return 0;
+    }
+
+    RequestContext takeRequest(uint32_t token) {
+        std::lock_guard<std::mutex> lock(_requestMutex);
+        for (auto& slot : _pendingRequests) {
+            if (token != 0 && slot.token == token) {
+                const auto request = slot;
+                slot = {};
+                return request;
+            }
+        }
+        return {};
+    }
+
+    // Called only under _requestMutex. Zero denotes a free slot, and a wrapped
+    // counter must not reuse a token still owned by another pending request.
+    uint32_t nextRequestToken() {
+        do {
+            ++_lastRequestToken;
+        } while (_lastRequestToken == 0 || tokenInUse(_lastRequestToken));
+        return _lastRequestToken;
+    }
+
+    bool tokenInUse(uint32_t token) const {
+        for (const auto& request : _pendingRequests) {
+            if (request.token == token) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     void handleError(Error error, uint32_t token) {
-        const auto ctx = takeRequest(token);
-        if (!ctx.token) return;
+        const auto request = takeRequest(token);
+        if (request.token == 0) {
+            return;
+        }
         _statistics.recordError();
-        ModbusError e(error);
+        ModbusError modbusError(error);
         char buffer[180];
         snprintf(buffer, sizeof(buffer), "Error response: %02X - %s, block=%s, transaction=%lu",
-                 (unsigned)(int)e, (const char*)e,
-                 DeviceType::blocks()[ctx.block_index].name, (unsigned long)ctx.token);
+                 (unsigned)(int)modbusError, (const char*)modbusError,
+                 DeviceType::blocks()[request.blockIndex].name, (unsigned long)request.token);
         Serial.println(buffer);
         _log.addString(buffer);
     }
+
     void handleData(ModbusMessage& response, uint32_t token) {
-        const auto ctx = takeRequest(token);
-        if (!ctx.token) return;
-        constexpr std::size_t header = 3;
-        if (response.size() < header || response.getServerID() != _tcp_server_id ||
-            response.getFunctionCode() != READ_HOLD_REGISTER ||
-            response.size() != header + 2u * ctx.count || response.data()[2] != ctx.count * 2u) {
+        const auto request = takeRequest(token);
+        if (request.token == 0) {
+            return;
+        }
+        if (!validResponse(response, request)) {
             _statistics.recordError();
             _log.addString("Invalid Modbus TCP response length/function/server ID");
             return;
         }
-        std::array<uint16_t, 125> words{};
-        const uint8_t* p = response.data() + header;
-        for (std::size_t i = 0; i < ctx.count; ++i)
-            words[i] = static_cast<uint16_t>((uint16_t(p[2*i]) << 8) | p[2*i+1]);
+        std::array<uint16_t, max_read_words> words{};
+        const uint8_t* payload = response.data() + response_header_bytes;
+        for (std::size_t wordIndex = 0; wordIndex < request.wordCount; ++wordIndex) {
+            const uint16_t highByte = payload[2 * wordIndex];
+            const uint16_t lowByte = payload[2 * wordIndex + 1];
+            words[wordIndex] = static_cast<uint16_t>((highByte << 8) | lowByte);
+        }
         DataAccess<Client> access(*this);
-        if (!access.writeHoldingRegisters(ctx.start, ctx.count, words.data())) {
+        if (!access.writeHoldingRegisters(request.address, request.wordCount, words.data())) {
             _statistics.recordError();
             _log.addString("Received data outside device schema");
             return;
@@ -180,18 +235,27 @@ private:
         _statistics.recordDataOk();
     }
 
+    bool validResponse(ModbusMessage& response, const RequestContext& request) const {
+        const auto payloadBytes = 2u * request.wordCount;
+        return response.size() >= response_header_bytes &&
+               response.getServerID() == _serverId &&
+               response.getFunctionCode() == READ_HOLD_REGISTER &&
+               response.size() == response_header_bytes + payloadBytes &&
+               response.data()[2] == payloadBytes;
+    }
+
     template<typename> friend class DataAccess;
     DeviceType _device{};
     Statistics _statistics;
     Log _log;
     std::atomic<bool> _updated{false};
-    std::array<RequestContext, request_capacity> _requests{};
-    uint32_t _transaction = 0;
+    std::array<RequestContext, request_capacity> _pendingRequests{};
+    uint32_t _lastRequestToken = 0;
     std::mutex _requestMutex;
-    ModbusClientTCP& _tcp;
-    IPAddress _remote;
-    uint16_t _tcp_port;
-    uint16_t _tcp_server_id;
+    ModbusClientTCP& _transport;
+    IPAddress _remoteAddress;
+    uint16_t _tcpPort;
+    uint16_t _serverId;
     mutable std::timed_mutex _Mutex;
 };
 } // namespace modbus_gateway
