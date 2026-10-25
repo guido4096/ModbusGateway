@@ -1,84 +1,85 @@
 #!/usr/bin/env python3
-"""Native regression suite; no firmware is flashed and platformio.ini is untouched."""
-import csv, io, pathlib, re, subprocess, sys, tempfile, struct, argparse
-ROOT=pathlib.Path(__file__).resolve().parents[1]
-OLD=ROOT/'baseline'; NEW=ROOT/'new'; STUB=ROOT/'stubs'
-COMPILER='clang++' if sys.platform=='darwin' else 'g++'
-SPECS=[('alfen','Alfen'),('em24_e1','EM24_E1'),('optimizer','Optimizer'),('solaredge','SolarEdge'),('wattnode','WattNode')]
-DT={'float32':(0,2),'int16':(1,1),'uint16':(2,1),'int32':(3,2),'uint32':(4,2)}
-SCALE={'none':1,'ten':10,'hundred':100,'thousand':1000}
-# Match the original WattNode/EM24/Alfen/etc block header and original field initializer.
-BLOCK=re.compile(r'\{\s*"([^"\n]+)"\s*,\s*(0x[0-9a-fA-F]+|\d+)\s*,\s*\{')
-FIELD=re.compile(r'\{\s*(\w+)\s*,\s*DataType::(\w+)\s*,\s*"([^"\n]*)"\s*,\s*"([^"\n]*)"\s*,\s*Scaling::(\w+)\s*,\s*Value::_\w+\(([^)]*)\)\s*(?:,\s*(true|false))?\s*\}')
-def legacy_rows(path, name):
-    text=path.read_text(); matches=list(BLOCK.finditer(text)); rows=[]
-    for j,m in enumerate(matches):
-        block,base=m.group(1),int(m.group(2),0); end=matches[j+1].start() if j+1<len(matches) else len(text)
-        chunk=text[m.end():end]; address=base
-        for f in FIELD.finditer(chunk):
-            ident,typ,desc,unit,scale,default,high=f.groups(); typecode,width=DT[typ]
-            default=default.strip()
-            if default in ('rtuServerId','serialNumber'): bits=None
-            else:
-                try:
-                    value=int(default,0) if typ!='float32' else float(default)
-                    bits=(struct.unpack('>I',struct.pack('>f',value))[0] if typ=='float32' else value & 0xffffffff)
-                except ValueError: raise RuntimeError(f'unhandled legacy default {default} in {path}')
-            rows.append((name,block,base,len(rows),address,typecode,SCALE[scale],1 if high=='true' else 0,desc,unit,bits))
-            address+=width
-    return rows
+"""Compile and exercise the current five-device gateway using a native C++17 compiler."""
+import argparse
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
 
-def build_test(src,output):
-    cmd=[COMPILER,'-std=c++17','-O1','-Wall','-Wextra','-I',str(STUB),'-I',str(NEW),str(src),str(NEW/'wattnode.cpp'),str(NEW/'alfen.cpp'),str(NEW/'em24_e1.cpp'),str(NEW/'optimizer.cpp'),str(NEW/'solaredge.cpp'),'-o',str(output)]
-    result=subprocess.run(cmd, text=True,capture_output=True)
-    if result.returncode:
-        print(result.stdout+result.stderr)
-        raise RuntimeError('Native C++ compilation failed')
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+TESTS = ROOT / "tests"
+STUBS = ROOT / "stubs"
+
+
+def conversion_body(source):
+    """Extract the real method definition; avoid compiling networking dependencies."""
+    pattern = r"void\s+(?:modbus_gateway::)?ConvertEM24_E1ToWattNode::CopyDataFromMasterToSlave\s*\(\s*\)"
+    match = re.search(pattern, source)
+    if not match:
+        raise ValueError("Cannot find CopyDataFromMasterToSlave() in project converter")
+    start = source.find('{', match.end())
+    if start < 0:
+        raise ValueError("Converter has no body")
+    depth = 0
+    for index in range(start, len(source)):
+        if source[index] == '{':
+            depth += 1
+        elif source[index] == '}':
+            depth -= 1
+            if depth == 0:
+                return source[match.start():index + 1]
+    raise ValueError("Converter body has unmatched braces")
+
+
+def build(compiler, src, test, output, includes):
+    command = [compiler, '-std=c++17', '-O1', '-Wall', '-Wextra',
+               '-UNDEBUG', '-I', str(STUBS), '-I', str(includes), '-I', str(src),
+               str(TESTS / test), str(src / 'em24_e1.cpp'), str(src / 'wattnode.cpp'),
+               str(src / 'alfen.cpp'), str(src / 'solaredge.cpp'), str(src / 'optimizer.cpp'),
+               '-o', str(output)]
+    completed = subprocess.run(command, text=True, capture_output=True)
+    if completed.returncode:
+        print(completed.stdout + completed.stderr, file=sys.stderr)
+        raise RuntimeError(f"Compilation failed: {test}")
+    subprocess.run([str(output)], check=True)
+
 
 def main():
-    global NEW
-    parser=argparse.ArgumentParser(description='Compare original register map with native-compiled new schema; never flashes.')
-    parser.add_argument('--project-src',type=pathlib.Path,help='Use headers/cpps in your current PlatformIO src/ instead of bundled snapshot')
-    args=parser.parse_args()
-    if args.project_src: NEW=args.project_src.resolve()
-    print('Candidate new schema directory:', NEW)
-    print('Native C++17 regression tests (no device needed)')
-    with tempfile.TemporaryDirectory() as tmp:
-        dump=pathlib.Path(tmp)/'schema_dump'; build_test(ROOT/'tests/schema_dump.cpp',dump)
-        res=subprocess.run([str(dump)],check=True,text=True,capture_output=True)
-        actual={}
-        for row in csv.reader(io.StringIO(res.stdout),delimiter='\t'):
-            key=row[0]; actual.setdefault(key,[]).append((row[0],row[1],int(row[2]),int(row[3]),int(row[4]),int(row[5]),int(row[6]),int(row[7]),row[8],row[9],int(row[10])))
-        all_count=0; discrepancies=[]
-        for filename,schema in SPECS:
-            base=legacy_rows(OLD/(filename+'.cpp'),filename)
-            # ESP32 is little-endian: old Value.w1 denotes the LOW word.
-            # Legacy read float32 uses `_wordorder` to choose between word orderings;
-            # int32/uint32 toFloat32() ignores it and always treats w1 as low.
-            # For these supplied schemas every 32-bit effective read is the inverse
-            # of the metadata boolean (all int32/uint32 flags are true).
-            base = [row[:7] + (1 - row[7],) + row[8:] if row[5] in (0,3,4) else row
-                    for row in base]
-            got=actual.get(filename,[])
-            if len(base)!=len(got): discrepancies.append(f'{schema}: original {len(base)} registers, new {len(got)}')
-            for idx,(b,g) in enumerate(zip(base,got)):
-                for col,field in enumerate(['device','block','block base','register id','address','type','scaling','word order','description','unit','default bits']):
-                    if b[col] is not None and b[col]!=g[col]: discrepancies.append(f'{schema} register {idx} {field}: original={b[col]!r}, new={g[col]!r}')
-            print(f'  {schema}: {len(base)} original vs {len(got)} compiled metadata records')
-            all_count+=len(base)
-        if discrepancies:
-            for d in discrepancies[:40]:print('FAIL:',d)
-            print(f'REGRESSION: {len(discrepancies)} metadata mismatches (continuing codec tests)')
-        print(f'CHECKED: {all_count} register descriptions against original sources')
-        binary=pathlib.Path(tmp)/'codec_test';build_test(ROOT/'tests/codec_test.cpp',binary)
-        subprocess.run([str(binary)],check=True)
-        script=subprocess.run([sys.executable,str(ROOT/'tests/conversion_audit.py'),str(NEW/'convert_em24_e1_to_wattnode.cpp')],text=True)
-        if script.returncode: raise AssertionError('Conversion source audit failed')
-    print('Running executable conversion comparison...')
-    subprocess.run([sys.executable,str(ROOT/'tests/conversion_equivalence.py'),str(NEW)],check=True)
-    if discrepancies: raise AssertionError(f'{len(discrepancies)} metadata mismatches')
-    print('PASS: native offline regression gates completed')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--project-src', type=pathlib.Path, default=pathlib.Path('src'),
+                        help='Gateway source directory (default: src)')
+    args = parser.parse_args()
+    src = args.project_src.resolve()
+    required = ('definitions.h', 'em24_e1.h', 'em24_e1.cpp', 'wattnode.h',
+                'wattnode.cpp', 'convert_em24_e1_to_wattnode.cpp',
+                'alfen.h', 'alfen.cpp', 'solaredge.h', 'solaredge.cpp',
+                'optimizer.h', 'optimizer.cpp')
+    missing = [name for name in required if not (src / name).is_file()]
+    if missing:
+        parser.error(f"Missing source files in {src}: {', '.join(missing)}")
+    compiler = shutil.which('clang++' if sys.platform == 'darwin' else 'g++')
+    if not compiler:
+        compiler = shutil.which('clang++') or shutil.which('g++')
+    if not compiler:
+        parser.error('C++17 compiler not found (clang++ or g++)')
+    body = conversion_body((src / 'convert_em24_e1_to_wattnode.cpp').read_text())
+    if not all(re.search(r'\b' + name + r'\b', body)
+               for name in ('Optimizer', 'SolarEdge', 'Alfen')):
+        parser.error('Expected a converter with Optimizer, SolarEdge and Alfen inputs')
+    with tempfile.TemporaryDirectory(prefix='modbus-regression-') as path:
+        temp = pathlib.Path(path)
+        build(compiler, src, 'schema_codec.cpp', temp / 'schema_codec', temp)
+        build(compiler, src, 'optional_schema.cpp', temp / 'optional_schema', temp)
+        (temp / 'conversion_body.inc').write_text(body + '\n')
+        build(compiler, src, 'conversion.cpp', temp / 'conversion', temp)
+    print('PASS: EM24_E1/WattNode/Alfen/SolarEdge/Optimizer native regression suite')
 
-if __name__=='__main__':
-    try: main()
-    except Exception as ex: print('FAIL:',ex,file=sys.stderr);sys.exit(1)
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (RuntimeError, subprocess.CalledProcessError, ValueError) as exc:
+        print(f'FAIL: {exc}', file=sys.stderr)
+        sys.exit(1)
