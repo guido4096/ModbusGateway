@@ -51,33 +51,31 @@ unsigned long prevTime3;
 
 void handleMeter()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24_E1>> m(meter);
-    String r = m.allValuesAsString();
-    webServer->send(200, "text/plain", r.c_str());
+    String response;
+    {
+        DataAccess<Client<EM24_E1>> access(meter);
+        response = access.allValuesAsString();
+    }
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleWattnode()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::WattNode>> wn(wattnode);
-    String r = wn.allValuesAsString();
-    webServer->send(200, "text/plain", r.c_str());
+    String response;
+    {
+        DataAccess<Server<WattNode>> access(wattnode);
+        response = access.allValuesAsString();
+    }
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleStatistics()
 {
-    String r;
-    {
-        modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::WattNode>> wn(wattnode);
-        r += "WattNode (RTU server)\r\n";
-        r += wn.getStatistics();
-    }
-    {
-        modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24_E1>> m(meter);
-        r += "\r\nMeter (TCP client)\r\n";
-        r += m.getStatistics();
-    }
-
-    webServer->send(200, "text/plain", r.c_str());
+    String response = "WattNode (RTU server)\r\n";
+    response += wattnode.getStatistics();
+    response += "\r\nMeter (TCP client)\r\n";
+    response += meter.getStatistics();
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleDescription()
@@ -91,18 +89,14 @@ void handleDescription()
 
 void handleLogMeter()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Client<modbus_gateway::EM24_E1>> m(meter);
-
-    String r = m.getLog();
-    webServer->send(200, "text/plain", r.c_str());
+    const String response = meter.getLog();
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 void handleLogWattnode()
 {
-    modbus_gateway::DataAccess<modbus_gateway::Server<modbus_gateway::WattNode>> wn(wattnode);
-
-    String r = wn.getLog();
-    webServer->send(200, "text/plain", r.c_str());
+    const String response = wattnode.getLog();
+    webServer->send(200, "text/plain", response.c_str());
 }
 
 } // namespace

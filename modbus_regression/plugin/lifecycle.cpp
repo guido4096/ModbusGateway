@@ -44,5 +44,10 @@ int main() {
     String links;
     plugin::appendRootLinks(links);
     assert(links.find("meter") != String::npos);
+    for (auto& route : web.routes) {
+        route.second();
+        assert(web.code == 200);
+        assert(native_device_locks == 0);
+    }
     std::cout << "PASS: production plugin setup, polling, conversion and web routes\n";
 }

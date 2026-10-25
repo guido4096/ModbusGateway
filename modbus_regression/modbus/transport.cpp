@@ -48,6 +48,20 @@ int main() {
     Client<TestSchema> client(tcp, IPAddress{}, 502, 1);
     client.connect();
     assert(!client.consumeUpdated());
+    // Direct diagnostics must also work while the caller holds the register lock.
+    // Acquiring that lock again here would deadlock on the non-recursive mutex.
+    {
+        DataAccess<Client<TestSchema>> access(client);
+        client.logMessage("client diagnostics");
+        assert(client.getLog().find("client diagnostics") != String::npos);
+        assert(client.getStatistics().find("totals:") != String::npos);
+    }
+    {
+        DataAccess<Server<TestSchema>> access(replacement);
+        replacement.logMessage("server diagnostics");
+        assert(replacement.getLog().find("server diagnostics") != String::npos);
+        assert(replacement.getStatistics().find("totals:") != String::npos);
+    }
     assert(client.readFromMeter(TestSchema::value, TestSchema::value));
     assert(tcp.pending.front().address == 100 && tcp.pending.front().count == 2);
     const auto old_token = tcp.pending.front().token;

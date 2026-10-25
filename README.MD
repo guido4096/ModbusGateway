@@ -124,3 +124,12 @@ their own contents.
 Schemas retain `metadata.valid` and also expose the first `metadata.error` as a
 `SchemaError`. `Device` rejects invalid schemas at compile time, including
 unrepresentable addresses, offsets, lengths and invalid field properties.
+
+`Client` and `Server` expose `getLog()`, `getStatistics()` and `logMessage()`
+directly. These methods use diagnostics' own synchronization without taking the
+register lock. DataAccess exclusively provides register access.
+
+HTTP handlers collect register responses inside a short DataAccess scope, release
+the guard, then send the response. Strategy handlers also release the guard
+before writing preferences to flash. The response describes the register state
+captured when the strategy was set.
