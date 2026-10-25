@@ -8,8 +8,9 @@
  */
 #pragma once
 #include <Arduino.h>
-#include <cstdio>
+#include <algorithm>
 #include "modbus/register_codec.h"
+#include "modbus/device_diagnostics.h"
 
 namespace modbus_gateway {
 /** Mutable state belonging to one device instance.
@@ -21,6 +22,7 @@ namespace modbus_gateway {
 template<typename Schema>
 class Device {
 public:
+    static_assert(Schema::metadata.valid, "Invalid device register schema");
     using RegisterType = typename Schema::RegisterId;
     static constexpr auto& metadata = Schema::metadata;
     static constexpr std::size_t word_count = decltype(Schema::metadata)::word_count;
@@ -42,9 +44,7 @@ public:
 
     template<RegisterType R>
     static constexpr const RegisterDescription& description() {
-        constexpr auto i = static_cast<std::size_t>(R);
-        static_assert(i < Schema::metadata.registers.size(), "Register ID out of range");
-        return metadata.registers[i];
+        return Schema::template description<R>();
     }
 
     // Every descriptor property used by the typed access path is known at
@@ -77,10 +77,13 @@ public:
     // words rather than logical C++ values. Holes between blocks are invalid.
     bool readHoldingRegisters(uint16_t address, uint16_t count, uint16_t* output) const {
         if (!output || count == 0 || uint32_t(address)+count > 65536) return false;
-        for (uint32_t n=0; n<count; ++n) {
-            auto pos = findWord(uint32_t(address)+n);
-            if (pos == invalid_position) return false;
+        const auto start = contiguousRange(address, count);
+        if (start != invalid_position) {
+            std::copy_n(words_.data() + start, count, output);
+            return true;
         }
+        for (uint32_t n=0; n<count; ++n)
+            if (findWord(uint32_t(address)+n) == invalid_position) return false;
         for (uint32_t n=0; n<count; ++n)
             output[n] = words_[findWord(uint32_t(address)+n)];
         return true;
@@ -89,6 +92,11 @@ public:
     // This raw protocol path does not apply scaling or field-level permissions.
     bool writeHoldingRegisters(uint16_t address, uint16_t count, const uint16_t* input) {
         if (!input || count == 0 || uint32_t(address)+count > 65536) return false;
+        const auto start = contiguousRange(address, count);
+        if (start != invalid_position) {
+            std::copy_n(input, count, words_.data() + start);
+            return true;
+        }
         for (uint32_t n=0; n<count; ++n)
             if (findWord(uint32_t(address)+n) == invalid_position) return false;
         for (uint32_t n=0; n<count; ++n)
@@ -97,59 +105,7 @@ public:
     }
     // Format the current register values using the schema descriptions and scaling.
     String allValuesAsString() const {
-        String result;
-        char buf[96];
-        for (std::size_t block_index = 0; block_index < metadata.blocks.size(); ++block_index) {
-            const auto& block = metadata.blocks[block_index];
-            result += "Block ";
-            result += block.name;
-            result += "\r\n";
-            for (const auto& r : metadata.registers) {
-                if (r.block != block_index) continue;
-                const uint32_t bits = loadBits(words_.data() + r.storage_offset,
-                                               r.words, r.high_word_first);
-                const double scale = static_cast<double>(getScaling(r.scaling));
-                const int decimals = static_cast<int>(fractionalDigits(r.scaling));
-                switch (r.type) {
-                case DataType::float32:
-                    snprintf(buf, sizeof(buf), "%.1f", static_cast<double>(fromBits(bits)) / scale);
-                    break;
-                case DataType::int16: {
-                    const int16_t v = static_cast<int16_t>(static_cast<uint16_t>(bits));
-                    if (decimals) snprintf(buf, sizeof(buf), "%.*f", decimals, static_cast<double>(v) / scale);
-                    else snprintf(buf, sizeof(buf), "%d", static_cast<int>(v));
-                    break;
-                }
-                case DataType::uint16: {
-                    const uint16_t v = static_cast<uint16_t>(bits);
-                    if (decimals) snprintf(buf, sizeof(buf), "%.*f", decimals, static_cast<double>(v) / scale);
-                    else snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(v));
-                    break;
-                }
-                case DataType::int32: {
-                    int32_t v;
-                    std::memcpy(&v, &bits, sizeof(v));
-                    if (decimals) snprintf(buf, sizeof(buf), "%.*f", decimals, static_cast<double>(v) / scale);
-                    else snprintf(buf, sizeof(buf), "%ld", static_cast<long>(v));
-                    break;
-                }
-                case DataType::uint32:
-                    if (decimals) snprintf(buf, sizeof(buf), "%.*f", decimals, static_cast<double>(bits) / scale);
-                    else snprintf(buf, sizeof(buf), "%lu", static_cast<unsigned long>(bits));
-                    break;
-                }
-                result += "  ";
-                result += r.name;
-                result += "=";
-                result += buf;
-                if (r.unit && *r.unit) {
-                    result += " ";
-                    result += r.unit;
-                }
-                result += "\r\n";
-            }
-        }
-        return result;
+        return formatDeviceValues(metadata, words_.data());
     }
 
     const uint16_t* rawWords() const { return words_.data(); }
@@ -157,6 +113,13 @@ public:
 
 private:
     static constexpr std::size_t invalid_position = static_cast<std::size_t>(-1);
+    static std::size_t contiguousRange(uint16_t address, uint16_t count) {
+        for (const auto& block : metadata.blocks)
+            if (address >= block.address &&
+                uint32_t(address) + count <= uint32_t(block.address) + block.words)
+                return block.storage_offset + address - block.address;
+        return invalid_position;
+    }
     // Convert a wire address to a flat storage offset. Each disjoint block
     // has its own wire base; its words are packed contiguously in words_.
     static std::size_t findWord(uint32_t address) {

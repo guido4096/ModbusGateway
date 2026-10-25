@@ -13,12 +13,13 @@ TESTS = ROOT / "tests"
 STUBS = ROOT / "stubs"
 
 
-def build(compiler, src, test, output, *, sources=(), flags=()):
+def build(compiler, src, test, output, *, sources=(), flags=(), include_dirs=(), production_transport=False):
     test = pathlib.Path(test)
     if not test.is_absolute():
         test = TESTS / test
+    includes = [*include_dirs, *((src, STUBS) if production_transport else (STUBS, src))]
     command = [compiler, '-std=c++17', '-O1', '-Wall', '-Wextra',
-               '-UNDEBUG', '-I', str(STUBS), '-I', str(src), *flags,
+               '-UNDEBUG', *(arg for path in includes for arg in ('-I', str(path))), *flags,
                str(test), *(str(path) for path in sources), '-o', str(output)]
     completed = subprocess.run(command, text=True, capture_output=True)
     if completed.returncode:
@@ -39,7 +40,7 @@ def main():
         parser.error('C++17 compiler not found (clang++ or g++)')
     with tempfile.TemporaryDirectory(prefix='modbus-regression-') as path:
         temp = pathlib.Path(path)
-        for suite in ('devices', 'plugin'):
+        for suite in ('modbus', 'devices', 'plugin'):
             runner = ROOT / suite / 'run.py'
             if not runner.is_file():
                 parser.error(f'Missing test runner: {runner}')

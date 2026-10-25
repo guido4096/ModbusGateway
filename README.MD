@@ -98,3 +98,29 @@ The application-defined Optimizer schema remains under `src/plugin/devices/`.
 Shared catalog tests live in `modbus_regression/devices/` and run on every branch,
 including for devices that its plugin does not use. Adding a reusable device does
 not require a change to the host or existing plugins.
+
+## Modbus infrastructure behavior
+
+Client data notifications are consumed with `consumeUpdated()` before conversion.
+An update arriving during conversion remains pending for a subsequent pass.
+Use `DataAccess` for device values; client/server storage is private.
+
+Each client keeps up to 32 pending requests in fixed storage. A full context
+table rejects new requests until a completion or error releases a slot. Tokens
+are numeric IDs, so callbacks do not depend on the host pointer width. A client
+exclusively owns its transport's data/error callback pair. Stop/drain the transport
+before destroying its client; callbacks are detached during destruction.
+
+Servers bind callbacks to their own instance. The same schema may be used by
+multiple endpoints; an occupied transport/server-ID/function combination is
+rejected and `registered()` reports false. Stop request processing before
+destroying a server; its registered workers are then removed.
+
+Statistics use atomic counters and serialized sampling. The log has a fixed
+200-entry ring, synchronized reads/writes, and nonblocking wall-clock timestamps
+with an uptime fallback before the clock is synchronized. Strings still allocate
+their own contents.
+
+Schemas retain `metadata.valid` and also expose the first `metadata.error` as a
+`SchemaError`. `Device` rejects invalid schemas at compile time, including
+unrepresentable addresses, offsets, lengths and invalid field properties.

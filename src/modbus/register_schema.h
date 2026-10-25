@@ -68,12 +68,22 @@ struct BlockDescription {
 // dynamically allocated descriptions are built at device startup. `valid`
 // captures checks performed during constant evaluation; each schema must
 // assert it before being used.
+enum class SchemaError : uint8_t {
+    none, invalid_id, duplicate_id, missing_id, address_overflow,
+    storage_overflow, block_overflow, overlapping_blocks, invalid_field
+};
+
 template<typename Id, std::size_t N, std::size_t B, std::size_t Words>
 struct StaticDescription {
     static constexpr std::size_t word_count = Words;
     std::array<RegisterDescription, N> registers{};
     std::array<BlockDescription, B> blocks{};
     bool valid = true;
+    SchemaError error = SchemaError::none;
+    constexpr void reject(SchemaError reason) {
+        valid = false;
+        if (error == SchemaError::none) error = reason;
+    }
 };
 
 
@@ -109,12 +119,12 @@ template<typename... Fields>
 struct TypedBlock {
     static constexpr std::size_t word_count = (Fields::word_count + ... + 0);
     const char* name;
-    uint16_t address;
+    uint32_t address;
     std::tuple<Fields...> fields;
 };
 
 template<typename... Fields>
-constexpr auto block(const char* name, uint16_t address, Fields... fields) {
+constexpr auto block(const char* name, uint32_t address, Fields... fields) {
     static_assert(sizeof...(Fields) > 0, "A Modbus block must contain fields");
     return TypedBlock<Fields...>{name, address, std::tuple<Fields...>{fields...}};
 }
@@ -151,11 +161,19 @@ constexpr auto makeDeviceSchema(const Blocks&... blocks) {
                               "Register ID type does not match schema");
                 constexpr auto width = F::word_count;
                 const auto index = static_cast<std::size_t>(f.id);
-                if (index >= N || assigned[index] ||
-                    uint32_t(b.address) + offset + width > 65536 ||
-                    storage + offset + width > Words) {
-                    m.valid = false;
-                } else {
+                if (index >= N) m.reject(SchemaError::invalid_id);
+                else if (assigned[index]) m.reject(SchemaError::duplicate_id);
+                else if (uint64_t(b.address) + offset + width > 65536)
+                    m.reject(SchemaError::address_overflow);
+                else if (storage + offset + width > Words || storage + offset > 65535)
+                    m.reject(SchemaError::storage_overflow);
+                else if (static_cast<unsigned>(F::data_type) > static_cast<unsigned>(DataType::uint32) ||
+                         width != numberRegisters(F::data_type) ||
+                         (f.order != WordOrder::HighFirst && f.order != WordOrder::LowFirst) ||
+                         (f.scaling != Scaling::none && f.scaling != Scaling::ten &&
+                          f.scaling != Scaling::hundred && f.scaling != Scaling::thousand))
+                    m.reject(SchemaError::invalid_field);
+                else {
                     assigned[index] = true;
                     m.registers[index] = RegisterDescription{
                         static_cast<uint16_t>(uint32_t(b.address) + offset),
@@ -171,22 +189,25 @@ constexpr auto makeDeviceSchema(const Blocks&... blocks) {
             };
             (appendField(fs), ...);
         }, b.fields);
+        if (blockNo > 65535 || offset > 65535 || offset == 0)
+            m.reject(SchemaError::block_overflow);
+        if (storage > 65535) m.reject(SchemaError::storage_overflow);
         m.blocks[blockNo] = BlockDescription{
-            b.name, b.address, static_cast<uint16_t>(offset),
+            b.name, static_cast<uint16_t>(b.address), static_cast<uint16_t>(offset),
             static_cast<uint16_t>(storage)
         };
         storage += offset;
         ++blockNo;
     };
     (appendBlock(blocks), ...);
-    if (storage != Words) m.valid = false;
-    for (bool present : assigned) if (!present) m.valid = false;
+    if (storage != Words || Words > 65536) m.reject(SchemaError::storage_overflow);
+    for (bool present : assigned) if (!present) m.reject(SchemaError::missing_id);
     for (std::size_t i=0; i<B; ++i)
         for (std::size_t j=i+1; j<B; ++j) {
             const auto& a=m.blocks[i]; const auto& b=m.blocks[j];
             if (uint32_t(a.address)<uint32_t(b.address)+b.words &&
                 uint32_t(b.address)<uint32_t(a.address)+a.words)
-                m.valid=false;
+                m.reject(SchemaError::overlapping_blocks);
         }
     return m;
 }

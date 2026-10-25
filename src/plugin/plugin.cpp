@@ -360,9 +360,8 @@ bool loop(unsigned long currTime) {
         previousPoll = currTime;
         jobScheduled = true;
     }
-    if (meter._dataRead) {
+    if (meter.consumeUpdated()) {
         converter.CopyDataFromMasterToSlave();
-        meter._dataRead = false;
     }
     return jobScheduled;
 }
